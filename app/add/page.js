@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import Link from "next/link";
 
-export default function AddEntry() {
+export default function  AddEntry() {
     const router = useRouter();
     const [showName, setShowName] = useState("");
     const [showUrl, setShowUrl] = useState("");
