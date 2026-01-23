@@ -157,7 +157,7 @@ export default function RegisterPage() {
                                     required
                                     value={lastName}
                                     onChange={(e) => setLastName(e.target.value)}
-                                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
+                                    className="w-full px-4  py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
                                     placeholder="Doe"
                                 />
                             </div>
