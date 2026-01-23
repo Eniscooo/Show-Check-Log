@@ -5,14 +5,17 @@ import { supabase } from "../lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export default function LoginPage() {
+export default function RegisterPage() {
     const [email, setEmail] = useState("");
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
+    const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const router = useRouter();
 
-    async function handleLogin(e) {
+    async function handleRegister(e) {
         e.preventDefault();
         setLoading(true);
         setError(null);
@@ -22,20 +25,26 @@ export default function LoginPage() {
                 console.warn("Supabase environment variables are missing!");
             }
 
-            const { data, error } = await supabase.auth.signInWithPassword({
+            const { data: authData, error: authError } = await supabase.auth.signUp({
                 email,
                 password,
+                options: {
+                    data: {
+                        first_name: firstName,
+                        last_name: lastName,
+                        username: username,
+                    }
+                }
             });
 
-            if (error) {
-                console.error("Supabase Login Error:", error);
-                throw error;
+            if (authError) {
+                console.error("Supabase Registration Error:", authError);
+                throw authError;
             }
 
-            router.push("/");
-            router.refresh();
+            router.push("/login");
         } catch (error) {
-            console.error("Login Handler Error:", error);
+            console.error("Registration Handler Error:", error);
             setError(error.message);
         } finally {
             setLoading(false);
@@ -44,7 +53,6 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-900 relative overflow-hidden">
-            {/* Background Effects */}
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 via-slate-900 to-slate-900 z-0"></div>
             <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-indigo-600/30 rounded-full blur-[120px] animate-pulse"></div>
             <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[100px]"></div>
@@ -63,19 +71,19 @@ export default function LoginPage() {
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     strokeWidth="2"
-                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
                                 />
                             </svg>
                         </div>
                         <h1 className="text-3xl font-bold text-white tracking-tight">
-                            Welcome Back
+                            Create Account
                         </h1>
                         <p className="text-indigo-200 mt-2 text-sm">
-                            Sign in to manage your show logs
+                            Sign up to manage your show logs
                         </p>
                     </div>
 
-                    <form onSubmit={handleLogin} className="space-y-6">
+                    <form onSubmit={handleRegister} className="space-y-5">
                         {error && (
                             <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-center gap-3">
                                 <svg
@@ -122,6 +130,66 @@ export default function LoginPage() {
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
                                     placeholder="admin@example.com"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-indigo-100 mb-1.5 ml-1">
+                                    First Name
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
+                                    placeholder="John"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-indigo-100 mb-1.5 ml-1">
+                                    Last Name
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
+                                    placeholder="Doe"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-indigo-100 mb-1.5 ml-1">
+                                Username
+                            </label>
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg
+                                        className="h-5 w-5 text-indigo-300 group-focus-within:text-indigo-400 transition-colors"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth="2"
+                                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                                        />
+                                    </svg>
+                                </div>
+                                <input
+                                    type="text"
+                                    required
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-indigo-300/50 transition-all outline-none"
+                                    placeholder="johndoe"
                                 />
                             </div>
                         </div>
@@ -184,19 +252,19 @@ export default function LoginPage() {
                                             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                         ></path>
                                     </svg>
-                                    Signing in...
+                                    Creating account...
                                 </>
                             ) : (
-                                "Sign In"
+                                "Create Account"
                             )}
                         </button>
                     </form>
 
                     <div className="mt-6 text-center">
                         <p className="text-sm text-indigo-200">
-                            Don't have an account?{" "}
-                            <Link href="/register" className="text-indigo-300 hover:text-white font-semibold underline">
-                                Sign up
+                            Already have an account?{" "}
+                            <Link href="/login" className="text-indigo-300 hover:text-white font-semibold underline">
+                                Sign in
                             </Link>
                         </p>
                     </div>

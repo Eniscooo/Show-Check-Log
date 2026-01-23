@@ -17,16 +17,73 @@ export default function Dashboard() {
   }, []);
 
   async function fetchLogs() {
-    const { data, error } = await supabase
-      .from("show_logs")
-      .select("*")
-      .order("created_at", { ascending: true });
+    try {
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error("Error getting user:", userError);
+        setLoading(false);
+        return;
+      }
+      
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      console.error("Error fetching logs:", error);
+      // Filter logs by user_id
+      const { data, error } = await supabase
+        .from("show_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        // Check if error is about missing column (common error codes: PGRST116, 42703)
+        const errorMessage = error.message || "";
+        const errorCode = error.code || "";
+        const errorDetails = error.details || "";
+        
+        console.error("Error fetching logs:");
+        console.error("Message:", errorMessage);
+        console.error("Code:", errorCode);
+        console.error("Details:", errorDetails);
+        console.error("Full error:", JSON.stringify(error, null, 2));
+        
+        // If column doesn't exist, provide helpful message
+        if (errorMessage.includes("user_id") || errorMessage.includes("column") || 
+            errorCode === "PGRST116" || errorCode === "42703" ||
+            errorDetails.includes("user_id")) {
+          console.error("\n⚠️  The 'user_id' column doesn't exist in your 'show_logs' table.");
+          console.error("Please run this SQL in your Supabase SQL Editor:");
+          console.error("ALTER TABLE show_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);");
+          console.error("\nFor now, fetching all logs (not filtered by user)...");
+          
+          // Temporary fallback: fetch all logs
+          const { data: allData, error: allError } = await supabase
+            .from("show_logs")
+            .select("*")
+            .order("created_at", { ascending: true });
+          
+          if (allError) {
+            console.error("Error fetching logs (fallback):", allError);
+            setLogs([]);
+          } else {
+            setLogs(allData || []);
+          }
+        } else {
+          setLogs([]);
+        }
+      } else {
+        setLogs(data || []);
+      }
+    } catch (err) {
+      console.error("Unexpected error in fetchLogs:", err);
+      setLogs([]);
+    } finally {
+      setLoading(false);
     }
-    setLogs(data || []);
-    setLoading(false);
   }
 
   async function handleSignOut() {

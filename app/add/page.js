@@ -1,26 +1,56 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import Link from "next/link";
 
 export default function  AddEntry() {
     const router = useRouter();
-    const [showName, setShowName] = useState("");
-    const [showUrl, setShowUrl] = useState("");
+    const [checkStartDate, setCheckStartDate] = useState("");
+    const [checkEndDate, setCheckEndDate] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [user, setUser] = useState(null);
+    const [userName, setUserName] = useState("");
+
+    useEffect(() => {
+        async function getUser() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setUser(user);
+                // Get user's name from metadata
+                const firstName = user.user_metadata?.first_name || "";
+                const lastName = user.user_metadata?.last_name || "";
+                const username = user.user_metadata?.username || "";
+                // Use full name if available, otherwise username
+                const displayName = (firstName && lastName) 
+                    ? `${firstName} ${lastName}` 
+                    : username || user.email?.split('@')[0] || "User";
+                setUserName(displayName);
+            }
+        }
+        getUser();
+    }, []);
 
     async function handleSubmit(e) {
         e.preventDefault();
         setSubmitting(true);
 
+        if (!user) {
+            alert("You must be logged in to add a show");
+            setSubmitting(false);
+            return;
+        }
+
         const { error } = await supabase.from("show_logs").insert([
             {
-                show_name: showName,
-                show_url: showUrl || null,
+                show_name: userName,
+                show_url: null,
                 status: false,
-                priority_color: 'none'
+                priority_color: 'none',
+                user_id: user.id,
+                check_start_date: checkStartDate || null,
+                check_end_date: checkEndDate || null
             }
         ]);
 
@@ -53,36 +83,36 @@ export default function  AddEntry() {
 
                 <div className="bg-white rounded-xl shadow-lg ring-1 ring-gray-900/5 overflow-hidden">
                     <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                        {/* User Info Display */}
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-4">
+                            <p className="text-sm text-gray-600 mb-1">Show will be created for:</p>
+                            <p className="text-lg font-semibold text-indigo-900">{userName || "Loading..."}</p>
+                        </div>
 
-                        {/* Show Name */}
+                        {/* Check Start Date */}
                         <div>
                             <label className="block text-sm font-semibold text-slate-900 mb-1">
-                                Show Name *
+                                Check Start Date
                             </label>
                             <input
-                                type="text"
-                                required
-                                className="block w-full rounded-md border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm capitalize"
-                                placeholder="e.g. Blue Note Jazz Club"
-                                value={showName}
-                                onChange={e => setShowName(e.target.value)}
+                                type="date"
+                                className="block w-full rounded-md border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
+                                value={checkStartDate}
+                                onChange={e => setCheckStartDate(e.target.value)}
                             />
                         </div>
 
-                        {/* Show URL */}
+                        {/* Check End Date */}
                         <div>
                             <label className="block text-sm font-semibold text-slate-900 mb-1">
-                                Show URL *
+                                Check End Date
                             </label>
                             <input
-                                type="url"
-                                required
+                                type="date"
                                 className="block w-full rounded-md border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
-                                placeholder="https://example.com"
-                                value={showUrl}
-                                onChange={e => setShowUrl(e.target.value)}
+                                value={checkEndDate}
+                                onChange={e => setCheckEndDate(e.target.value)}
                             />
-                            <p className="mt-1 text-xs text-gray-500">Show name will be clickable and open this URL</p>
                         </div>
 
                         <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">

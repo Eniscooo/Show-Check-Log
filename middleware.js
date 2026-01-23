@@ -33,11 +33,11 @@ export async function middleware(request) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user && request.nextUrl.pathname !== '/login') {
+    if (!user && request.nextUrl.pathname !== '/login' && request.nextUrl.pathname !== '/register') {
         return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    if (user && request.nextUrl.pathname === '/login') {
+    if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
         return NextResponse.redirect(new URL('/', request.url))
     }
 

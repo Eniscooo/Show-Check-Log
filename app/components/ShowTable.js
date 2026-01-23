@@ -20,6 +20,7 @@ export default function ShowTable({ logs: initialLogs }) {
         checkStartDate: "",
         checkEndDate: ""
     });
+    const [currentUser, setCurrentUser] = useState(null);
 
     // Edit User Modal State
     const [editingUser, setEditingUser] = useState(null);
@@ -47,16 +48,44 @@ export default function ShowTable({ logs: initialLogs }) {
         }
     }, [initialLogs]);
 
-    // Fetch users for each show
+    // Get current user info
+    useEffect(() => {
+        async function getCurrentUser() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setCurrentUser(user);
+                // Pre-populate join form with user info
+                const firstName = user.user_metadata?.first_name || "";
+                const lastName = user.user_metadata?.last_name || "";
+                const username = user.user_metadata?.username || "";
+                const displayName = (firstName && lastName) 
+                    ? `${firstName} ${lastName}` 
+                    : username || user.email?.split('@')[0] || "";
+                setJoinForm(prev => ({
+                    ...prev,
+                    name: displayName,
+                    email: user.email || ""
+                }));
+            }
+        }
+        getCurrentUser();
+    }, []);
+
+    // Fetch users for each show (only current user's entries)
     useEffect(() => {
         async function fetchShowUsers() {
             const showIds = logs.map(log => log.id);
             if (showIds.length === 0) return;
 
+            // Get current user
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
             const { data, error } = await supabase
                 .from("show_users")
                 .select("*")
                 .in("show_id", showIds)
+                .eq("user_id", user.id) // Only get entries for current user
                 .order("created_at", { ascending: true });
 
             if (!error && data) {
@@ -72,6 +101,26 @@ export default function ShowTable({ logs: initialLogs }) {
         }
         fetchShowUsers();
     }, [logs]);
+
+    // Open Join Modal
+    function openJoinModal(showId) {
+        setShowJoinModal(showId);
+        // Reset form with current user info
+        if (currentUser) {
+            const firstName = currentUser.user_metadata?.first_name || "";
+            const lastName = currentUser.user_metadata?.last_name || "";
+            const username = currentUser.user_metadata?.username || "";
+            const displayName = (firstName && lastName) 
+                ? `${firstName} ${lastName}` 
+                : username || currentUser.email?.split('@')[0] || "";
+            setJoinForm({
+                name: displayName,
+                email: currentUser.email || "",
+                checkStartDate: "",
+                checkEndDate: ""
+            });
+        }
+    }
 
     // Open Edit Modal
     function openEditModal(user) {
@@ -172,11 +221,12 @@ export default function ShowTable({ logs: initialLogs }) {
     }
 
     async function handleJoinShow() {
-        if (!joinForm.name.trim() || !showJoinModal) return;
+        if (!joinForm.name.trim() || !showJoinModal || !currentUser) return;
         const { data, error } = await supabase
             .from("show_users")
             .insert([{
                 show_id: showJoinModal,
+                user_id: currentUser.id, // Associate with current user
                 user_name: joinForm.name.trim(),
                 user_email: joinForm.email.trim() || null,
                 check_start_date: joinForm.checkStartDate || null,
@@ -338,7 +388,7 @@ export default function ShowTable({ logs: initialLogs }) {
                                                     )}
                                                 </div>
                                                 {users.length === 0 && <span className="text-xs text-gray-400 italic">No users</span>}
-                                                <button onClick={() => setShowJoinModal(log.id)} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-wide uppercase">
+                                                <button onClick={() => openJoinModal(log.id)} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-wide uppercase">
                                                     + Join
                                                 </button>
                                             </div>
@@ -377,7 +427,7 @@ export default function ShowTable({ logs: initialLogs }) {
                                                                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                                                             </div>
                                                             <p className="text-sm text-gray-500 mb-4">No users have joined yet.</p>
-                                                            <button onClick={() => setShowJoinModal(log.id)} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline">Add user now</button>
+                                                            <button onClick={() => openJoinModal(log.id)} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline">Add user now</button>
                                                         </div>
                                                     ) : (
                                                         <table className="min-w-full">
@@ -480,7 +530,8 @@ export default function ShowTable({ logs: initialLogs }) {
                         <div className="space-y-5">
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name *</label>
-                                <input type="text" value={joinForm.name} onChange={e => setJoinForm({ ...joinForm, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow" placeholder="e.g. Jane Doe" autoFocus />
+                                <input type="text" value={joinForm.name} onChange={e => setJoinForm({ ...joinForm, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50" placeholder="e.g. Jane Doe" autoFocus readOnly />
+                                <p className="mt-1 text-xs text-gray-500">This is automatically set from your profile</p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
