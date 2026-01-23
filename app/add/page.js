@@ -42,17 +42,19 @@ export default function  AddEntry() {
             return;
         }
 
-        const { error } = await supabase.from("show_logs").insert([
-            {
-                show_name: userName,
-                show_url: null,
-                status: false,
-                priority_color: 'none',
-                user_id: user.id,
-                check_start_date: checkStartDate || null,
-                check_end_date: checkEndDate || null
-            }
-        ]);
+        // Build the insert object using the correct column names from your schema
+        const insertData = {
+            show_name: userName,
+            show_url: null,
+            status: false,
+            priority_color: 'none',
+            user_id: user.id,
+            // Use the existing column names: check_starting and checked_through
+            check_starting: checkStartDate || null,
+            checked_through: checkEndDate || null
+        };
+
+        const { error } = await supabase.from("show_logs").insert([insertData]);
 
         if (error) {
             console.error("Error inserting data:", error);
