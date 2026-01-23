@@ -48,7 +48,6 @@ export default function ShowTable({ logs: initialLogs }) {
         }
     }, [initialLogs]);
 
-    // Get current user info
     useEffect(() => {
         async function getCurrentUser() {
             const { data: { user } } = await supabase.auth.getUser();
@@ -105,7 +104,6 @@ export default function ShowTable({ logs: initialLogs }) {
     // Open Join Modal
     function openJoinModal(showId) {
         setShowJoinModal(showId);
-        // Reset form with current user info
         if (currentUser) {
             const firstName = currentUser.user_metadata?.first_name || "";
             const lastName = currentUser.user_metadata?.last_name || "";
@@ -222,30 +220,71 @@ export default function ShowTable({ logs: initialLogs }) {
 
     async function handleJoinShow() {
         if (!joinForm.name.trim() || !showJoinModal || !currentUser) return;
+        
+        // Build insert data object with required fields
+        const insertData = {
+            show_id: showJoinModal,
+            user_name: joinForm.name.trim(),
+            user_email: joinForm.email.trim() || null,
+            check_start_date: joinForm.checkStartDate || null,
+            check_end_date: joinForm.checkEndDate || null,
+            date_checked: null,
+            time_checked: null,
+            status: false
+        };
+
+        // Add user_id if available (column may not exist yet)
+        if (currentUser?.id) {
+            insertData.user_id = currentUser.id;
+        }
+
         const { data, error } = await supabase
             .from("show_users")
-            .insert([{
-                show_id: showJoinModal,
-                user_id: currentUser.id, // Associate with current user
-                user_name: joinForm.name.trim(),
-                user_email: joinForm.email.trim() || null,
-                check_start_date: joinForm.checkStartDate || null,
-                check_end_date: joinForm.checkEndDate || null,
-                date_checked: null,
-                time_checked: null,
-                status: false
-            }])
+            .insert([insertData])
             .select();
 
-        if (!error && data) {
+        if (error) {
+            console.error("Error joining show:", error);
+            console.error("Error message:", error.message);
+            console.error("Error code:", error.code);
+            console.error("Error details:", error.details);
+            console.error("Full error:", JSON.stringify(error, null, 2));
+            
+            // Check for specific error types
+            const errorMsg = error.message || "";
+            const errorCode = error.code || "";
+            const errorDetails = error.details || "";
+            
+            // Check if it's a missing column issue
+            if (errorMsg.includes("user_id") || errorMsg.includes("column") || 
+                errorCode === "PGRST116" || errorCode === "42703" ||
+                errorDetails.includes("user_id")) {
+                alert(`Database Error: The 'user_id' column doesn't exist in 'show_users' table.\n\nPlease run this SQL in your Supabase SQL Editor:\n\nALTER TABLE show_users ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);\n\nThen try again.`);
+            } 
+            // Check if it's a constraint violation (duplicate entry, etc.)
+            else if (errorMsg.includes("duplicate") || errorMsg.includes("unique") || errorCode === "23505") {
+                alert(`Error: You may have already joined this show, or there's a duplicate entry.\n\n${errorMsg}`);
+            }
+            // Check if it's a foreign key constraint
+            else if (errorMsg.includes("foreign key") || errorMsg.includes("constraint") || errorCode === "23503") {
+                alert(`Database Error: Invalid show ID or constraint violation.\n\n${errorMsg}`);
+            }
+            // Generic error
+            else {
+                alert(`Error joining show: ${errorMsg || "Unknown error. Check console for details."}`);
+            }
+            return;
+        }
+
+        if (data && data[0]) {
             setShowUsers(prev => ({
                 ...prev,
                 [showJoinModal]: [...(prev[showJoinModal] || []), data[0]]
             }));
             setExpandedShows(prev => ({ ...prev, [showJoinModal]: true }));
+            setShowJoinModal(null);
+            setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" });
         }
-        setShowJoinModal(null);
-        setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" });
     }
 
     // Toggle user status
@@ -534,13 +573,19 @@ export default function ShowTable({ logs: initialLogs }) {
                                 <p className="mt-1 text-xs text-gray-500">This is automatically set from your profile</p>
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+                                <input type="email" value={joinForm.email} onChange={e => setJoinForm({ ...joinForm, email: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50" placeholder="your@email.com" readOnly />
+                                <p className="mt-1 text-xs text-gray-500">This is automatically set from your account</p>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check Start</label>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check Start Date</label>
                                     <input type="date" value={joinForm.checkStartDate} onChange={e => setJoinForm({ ...joinForm, checkStartDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check End</label>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check End Date</label>
                                     <input type="date" value={joinForm.checkEndDate} onChange={e => setJoinForm({ ...joinForm, checkEndDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                                 </div>
                             </div>
