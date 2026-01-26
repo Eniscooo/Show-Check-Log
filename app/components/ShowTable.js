@@ -3,9 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
 export default function ShowTable({ logs: initialLogs }) {
-    const initialOrderRef = useRef(null);
     const [logs, setLogs] = useState(initialLogs);
-    const [showUsers, setShowUsers] = useState({});
     const [selectedRows, setSelectedRows] = useState([]);
     const [editingNotes, setEditingNotes] = useState(null);
     const [editingPriority, setEditingPriority] = useState(null);
@@ -29,23 +27,8 @@ export default function ShowTable({ logs: initialLogs }) {
         checkEndDate: ""
     });
 
-    // Store initial order
     useEffect(() => {
-        if (initialOrderRef.current === null && initialLogs.length > 0) {
-            initialOrderRef.current = initialLogs.map(log => log.id);
-        }
-        if (initialOrderRef.current) {
-            const orderedLogs = [...initialLogs].sort((a, b) => {
-                const indexA = initialOrderRef.current.indexOf(a.id);
-                const indexB = initialOrderRef.current.indexOf(b.id);
-                if (indexA === -1) return 1;
-                if (indexB === -1) return -1;
-                return indexA - indexB;
-            });
-            setLogs(orderedLogs);
-        } else {
-            setLogs(initialLogs);
-        }
+        setLogs(initialLogs);
     }, [initialLogs]);
 
     useEffect(() => {
@@ -57,8 +40,8 @@ export default function ShowTable({ logs: initialLogs }) {
                 const firstName = user.user_metadata?.first_name || "";
                 const lastName = user.user_metadata?.last_name || "";
                 const username = user.user_metadata?.username || "";
-                const displayName = (firstName && lastName) 
-                    ? `${firstName} ${lastName}` 
+                const displayName = (firstName && lastName)
+                    ? `${firstName} ${lastName}`
                     : username || user.email?.split('@')[0] || "";
                 setJoinForm(prev => ({
                     ...prev,
@@ -70,37 +53,6 @@ export default function ShowTable({ logs: initialLogs }) {
         getCurrentUser();
     }, []);
 
-    // Fetch users for each show (only current user's entries)
-    useEffect(() => {
-        async function fetchShowUsers() {
-            const showIds = logs.map(log => log.id);
-            if (showIds.length === 0) return;
-
-            // Get current user
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            const { data, error } = await supabase
-                .from("show_users")
-                .select("*")
-                .in("show_id", showIds)
-                .eq("user_id", user.id) // Only get entries for current user
-                .order("created_at", { ascending: true });
-
-            if (!error && data) {
-                const usersByShow = {};
-                data.forEach(user => {
-                    if (!usersByShow[user.show_id]) {
-                        usersByShow[user.show_id] = [];
-                    }
-                    usersByShow[user.show_id].push(user);
-                });
-                setShowUsers(usersByShow);
-            }
-        }
-        fetchShowUsers();
-    }, [logs]);
-
     // Open Join Modal
     function openJoinModal(showId) {
         setShowJoinModal(showId);
@@ -108,8 +60,8 @@ export default function ShowTable({ logs: initialLogs }) {
             const firstName = currentUser.user_metadata?.first_name || "";
             const lastName = currentUser.user_metadata?.last_name || "";
             const username = currentUser.user_metadata?.username || "";
-            const displayName = (firstName && lastName) 
-                ? `${firstName} ${lastName}` 
+            const displayName = (firstName && lastName)
+                ? `${firstName} ${lastName}`
                 : username || currentUser.email?.split('@')[0] || "";
             setJoinForm({
                 name: displayName,
@@ -130,21 +82,24 @@ export default function ShowTable({ logs: initialLogs }) {
     }
 
     // Handle Edit Submit
+    // Handle Edit Submit (User Dates)
     async function handleEditSubmit() {
         if (!editingUser) return;
 
-        const { error } = await supabase.from("show_users").update({
+        const { error } = await supabase.from("show_participants").update({
             check_start_date: editForm.checkStartDate || null,
             check_end_date: editForm.checkEndDate || null
         }).eq("id", editingUser.id);
 
         if (!error) {
-            setShowUsers(prev => ({
-                ...prev,
-                [editingUser.show_id]: (prev[editingUser.show_id] || []).map(u =>
-                    u.id === editingUser.id ? { ...u, check_start_date: editForm.checkStartDate, check_end_date: editForm.checkEndDate } : u
-                )
-            }));
+            setLogs(prev => prev.map(log =>
+                log.id === editingUser.show_id ? {
+                    ...log,
+                    show_participants: log.show_participants.map(u =>
+                        u.id === editingUser.id ? { ...u, check_start_date: editForm.checkStartDate, check_end_date: editForm.checkEndDate } : u
+                    )
+                } : log
+            ));
             setEditingUser(null);
         } else {
             alert("Failed to update user: " + error.message);
@@ -166,7 +121,7 @@ export default function ShowTable({ logs: initialLogs }) {
 
     async function handleDeleteShow(showId) {
         if (!confirm("Delete this show and all its user assignments?")) return;
-        const { error } = await supabase.from("show_logs").delete().eq("id", showId);
+        const { error } = await supabase.from("shows").delete().eq("id", showId);
         if (!error) {
             setLogs(prev => prev.filter(log => log.id !== showId));
         }
@@ -174,19 +129,21 @@ export default function ShowTable({ logs: initialLogs }) {
 
     async function handleDeleteUser(userId, showId) {
         if (!confirm("Remove this user from the show?")) return;
-        const { error } = await supabase.from("show_users").delete().eq("id", userId);
+        const { error } = await supabase.from("show_participants").delete().eq("id", userId);
         if (!error) {
-            setShowUsers(prev => ({
-                ...prev,
-                [showId]: (prev[showId] || []).filter(u => u.id !== userId)
-            }));
+            setLogs(prev => prev.map(log =>
+                log.id === showId ? {
+                    ...log,
+                    show_participants: log.show_participants.filter(u => u.id !== userId)
+                } : log
+            ));
         }
     }
 
     async function handleBulkDelete() {
         if (selectedRows.length === 0) return;
         if (!confirm(`Delete ${selectedRows.length} selected show(s)?`)) return;
-        const { error } = await supabase.from("show_logs").delete().in("id", selectedRows);
+        const { error } = await supabase.from("shows").delete().in("id", selectedRows);
         if (!error) {
             setLogs(prev => prev.filter(log => !selectedRows.includes(log.id)));
             setSelectedRows([]);
@@ -201,86 +158,102 @@ export default function ShowTable({ logs: initialLogs }) {
         setSelectedRows(selectedRows.length === logs.length ? [] : logs.map(log => log.id));
     }
 
+    // Priority is now SHARED (on shows table)
     async function handlePriorityChange(showId, newColor) {
-        const { error } = await supabase.from("show_logs").update({ priority_color: newColor }).eq("id", showId);
-        if (!error) {
-            setLogs(prev => prev.map(log => log.id === showId ? { ...log, priority_color: newColor } : log));
+        console.log("Updating priority for show:", showId, "to:", newColor);
+
+        try {
+            const { data, error } = await supabase
+                .from("shows")
+                .update({ priority_color: newColor })
+                .eq("id", showId)
+                .select();
+
+            if (error) {
+                console.error("Error setting priority:", error);
+                alert("Failed to set priority: " + error.message);
+                return;
+            }
+
+            console.log("Priority updated successfully:", data);
+
+            // Update local state
+            setLogs(prev => prev.map(log =>
+                log.id === showId ? { ...log, priority_color: newColor } : log
+            ));
             setEditingPriority(null);
+        } catch (err) {
+            console.error("Exception updating priority:", err);
+            alert("Failed to set priority: " + err.message);
         }
     }
 
+    // Notes are in shows table (shared)
     async function handleNotesSubmit(showId) {
-        const { error } = await supabase.from("show_logs").update({ notes: tempNotes }).eq("id", showId);
-        if (!error) {
-            setLogs(prev => prev.map(log => log.id === showId ? { ...log, notes: tempNotes } : log));
+        console.log("Updating notes for show:", showId, "to:", tempNotes);
+
+        try {
+            const { data, error } = await supabase
+                .from("shows")
+                .update({ notes: tempNotes })
+                .eq("id", showId)
+                .select();
+
+            if (error) {
+                console.error("Error updating notes:", error);
+                alert("Failed to update notes: " + error.message);
+                return;
+            }
+
+            console.log("Notes updated successfully:", data);
+
+            // Update local state
+            setLogs(prev => prev.map(log =>
+                log.id === showId ? { ...log, notes: tempNotes } : log
+            ));
             setEditingNotes(null);
             setTempNotes("");
+        } catch (err) {
+            console.error("Exception updating notes:", err);
+            alert("Failed to update notes: " + err.message);
         }
     }
 
     async function handleJoinShow() {
         if (!joinForm.name.trim() || !showJoinModal || !currentUser) return;
-        
-        // Build insert data object with required fields
+
+        // Build insert data object
         const insertData = {
             show_id: showJoinModal,
+            user_id: currentUser.id,
             user_name: joinForm.name.trim(),
-            user_email: joinForm.email.trim() || null,
             check_start_date: joinForm.checkStartDate || null,
             check_end_date: joinForm.checkEndDate || null,
-            date_checked: null,
-            time_checked: null,
             status: false
         };
 
-        // Add user_id if available (column may not exist yet)
-        if (currentUser?.id) {
-            insertData.user_id = currentUser.id;
-        }
-
         const { data, error } = await supabase
-            .from("show_users")
+            .from("show_participants")
             .insert([insertData])
             .select();
 
         if (error) {
             console.error("Error joining show:", error);
-            console.error("Error message:", error.message);
-            console.error("Error code:", error.code);
-            console.error("Error details:", error.details);
-            console.error("Full error:", JSON.stringify(error, null, 2));
-            
-            // Check for specific error types
-            const errorMsg = error.message || "";
-            const errorCode = error.code || "";
-            const errorDetails = error.details || "";
-            
-            // Check if it's a missing column issue
-            if (errorMsg.includes("user_id") || errorMsg.includes("column") || 
-                errorCode === "PGRST116" || errorCode === "42703" ||
-                errorDetails.includes("user_id")) {
-                alert(`Database Error: The 'user_id' column doesn't exist in 'show_users' table.\n\nPlease run this SQL in your Supabase SQL Editor:\n\nALTER TABLE show_users ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);\n\nThen try again.`);
-            } 
-            // Check if it's a constraint violation (duplicate entry, etc.)
-            else if (errorMsg.includes("duplicate") || errorMsg.includes("unique") || errorCode === "23505") {
-                alert(`Error: You may have already joined this show, or there's a duplicate entry.\n\n${errorMsg}`);
-            }
-            // Check if it's a foreign key constraint
-            else if (errorMsg.includes("foreign key") || errorMsg.includes("constraint") || errorCode === "23503") {
-                alert(`Database Error: Invalid show ID or constraint violation.\n\n${errorMsg}`);
-            }
-            // Generic error
-            else {
-                alert(`Error joining show: ${errorMsg || "Unknown error. Check console for details."}`);
+            if (error.code === "23505") { // Unique violation
+                alert("You have already joined this show.");
+            } else {
+                alert(`Error joining show: ${error.message}`);
             }
             return;
         }
 
         if (data && data[0]) {
-            setShowUsers(prev => ({
-                ...prev,
-                [showJoinModal]: [...(prev[showJoinModal] || []), data[0]]
-            }));
+            setLogs(prev => prev.map(log =>
+                log.id === showJoinModal ? {
+                    ...log,
+                    show_participants: [...(log.show_participants || []), data[0]]
+                } : log
+            ));
             setExpandedShows(prev => ({ ...prev, [showJoinModal]: true }));
             setShowJoinModal(null);
             setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" });
@@ -289,17 +262,23 @@ export default function ShowTable({ logs: initialLogs }) {
 
     // Toggle user status
     async function handleToggleUserStatus(user) {
+        // Permission check: You can only toggle your OWN status
+        if (user.user_id !== currentUser?.id) {
+            alert("You can only change your own status.");
+            return;
+        }
+
         const newStatus = !user.status;
         const now = new Date();
 
         const updateData = {
             status: newStatus,
-            date_checked: newStatus ? now.toISOString().split('T')[0] : null,
-            time_checked: newStatus ? now.toTimeString().slice(0, 5) : null
+            last_checked_at: newStatus ? now.toISOString() : null,
+            status_changed_at: now.toISOString()
         };
 
         const { error } = await supabase
-            .from("show_users")
+            .from("show_participants")
             .update(updateData)
             .eq("id", user.id);
 
@@ -309,13 +288,15 @@ export default function ShowTable({ logs: initialLogs }) {
             return;
         }
 
-        // Update local state immediately
-        setShowUsers(prev => ({
-            ...prev,
-            [user.show_id]: (prev[user.show_id] || []).map(u =>
-                u.id === user.id ? { ...u, ...updateData } : u
-            )
-        }));
+        // Update local state
+        setLogs(prev => prev.map(log =>
+            log.id === user.show_id ? {
+                ...log,
+                show_participants: log.show_participants.map(u =>
+                    u.id === user.id ? { ...u, ...updateData, date_checked: now.toISOString().split('T')[0], time_checked: now.toTimeString().slice(0, 5) } : u
+                )
+            } : log
+        ));
     }
 
     return (
@@ -331,8 +312,8 @@ export default function ShowTable({ logs: initialLogs }) {
                 </div>
             )}
 
-            {/* Main Table */}
-            <div className="overflow-x-auto min-h-[500px]">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto min-h-[500px]">
                 <table className="min-w-full text-left">
                     <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/50">
@@ -348,7 +329,7 @@ export default function ShowTable({ logs: initialLogs }) {
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                         {logs.map(log => {
-                            const users = showUsers[log.id] || [];
+                            const users = log.show_participants || [];
                             const isExpanded = expandedShows[log.id];
 
                             return (
@@ -358,9 +339,9 @@ export default function ShowTable({ logs: initialLogs }) {
                                             <input type="checkbox" checked={selectedRows.includes(log.id)} onChange={() => toggleRowSelection(log.id)} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                                         </td>
                                         <td className="px-6 py-5">
-                                            <a href={log.show_url || "#"} target="_blank" rel="noopener noreferrer" className="group/link flex items-center gap-2">
-                                                <span className="text-lg font-bold text-gray-900 group-hover/link:text-indigo-600 transition-colors capitalize">{log.show_name}</span>
-                                                {log.show_url && (
+                                            <a href={log.url || "#"} target="_blank" rel="noopener noreferrer" className="group/link flex items-center gap-2">
+                                                <span className="text-lg font-bold text-gray-900 group-hover/link:text-indigo-600 transition-colors capitalize">{log.name}</span>
+                                                {log.url && (
                                                     <svg className="w-4 h-4 text-gray-400 group-hover/link:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                     </svg>
@@ -427,9 +408,11 @@ export default function ShowTable({ logs: initialLogs }) {
                                                     )}
                                                 </div>
                                                 {users.length === 0 && <span className="text-xs text-gray-400 italic">No users</span>}
-                                                <button onClick={() => openJoinModal(log.id)} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-wide uppercase">
-                                                    + Join
-                                                </button>
+                                                {!users.some(u => u.user_id === currentUser?.id) && (
+                                                    <button onClick={() => openJoinModal(log.id)} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-wide uppercase">
+                                                        + Join
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5 text-right">
@@ -448,7 +431,7 @@ export default function ShowTable({ logs: initialLogs }) {
                                         </td>
                                     </tr>
 
-                                    {/* Expanded User Details - Card Style */}
+                                    {/* Expanded User Details - Desktop */}
                                     {isExpanded && (
                                         <tr className="bg-gray-50/50">
                                             <td colSpan={6} className="px-6 py-4">
@@ -492,10 +475,10 @@ export default function ShowTable({ logs: initialLogs }) {
                                                                             </span>
                                                                         </td>
                                                                         <td className="px-6 py-4 text-sm text-gray-600">
-                                                                            {user.date_checked ? (
+                                                                            {user.last_checked_at ? (
                                                                                 <div className="flex flex-col">
-                                                                                    <span className="font-medium text-gray-900">{user.date_checked}</span>
-                                                                                    <span className="text-xs text-gray-500">{user.time_checked}</span>
+                                                                                    <span className="font-medium text-gray-900">{new Date(user.last_checked_at).toLocaleDateString()}</span>
+                                                                                    <span className="text-xs text-gray-500">{new Date(user.last_checked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                                                                 </div>
                                                                             ) : (
                                                                                 <span className="text-gray-400">-</span>
@@ -504,9 +487,11 @@ export default function ShowTable({ logs: initialLogs }) {
                                                                         <td className="px-6 py-4">
                                                                             <button
                                                                                 onClick={() => handleToggleUserStatus(user)}
-                                                                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${user.status
-                                                                                    ? 'bg-green-100 text-green-700 hover:bg-green-200 ring-1 ring-green-600/20'
-                                                                                    : 'bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-red-600/10'}`}
+                                                                                disabled={user.user_id !== currentUser?.id}
+                                                                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${user.user_id !== currentUser?.id ? 'opacity-50 cursor-not-allowed' : ''
+                                                                                    } ${user.status
+                                                                                        ? 'bg-green-100 text-green-700 hover:bg-green-200 ring-1 ring-green-600/20'
+                                                                                        : 'bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-red-600/10'}`}
                                                                             >
                                                                                 {user.status ? (
                                                                                     <>
@@ -523,9 +508,13 @@ export default function ShowTable({ logs: initialLogs }) {
                                                                         </td>
                                                                         <td className="px-6 py-4 text-right">
                                                                             <div className="flex items-center justify-end gap-2">
-                                                                                <button onClick={() => openEditModal(user)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium hover:underline">Edit</button>
-                                                                                <span className="text-gray-300">|</span>
-                                                                                <button onClick={() => handleDeleteUser(user.id, log.id)} className="text-gray-400 hover:text-red-600 transition-colors text-xs font-medium">Delete</button>
+                                                                                {user.user_id === currentUser?.id && (
+                                                                                    <>
+                                                                                        <button onClick={() => openEditModal(user)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium hover:underline">Edit Date</button>
+                                                                                        <span className="text-gray-300">|</span>
+                                                                                        <button onClick={() => handleDeleteUser(user.id, log.id)} className="text-gray-400 hover:text-red-600 transition-colors text-xs font-medium">Leave</button>
+                                                                                    </>
+                                                                                )}
                                                                             </div>
                                                                         </td>
                                                                     </tr>
@@ -542,6 +531,120 @@ export default function ShowTable({ logs: initialLogs }) {
                         })}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="block md:hidden space-y-4">
+                {logs.map(log => {
+                    const users = log.show_participants || [];
+                    const isExpanded = expandedShows[log.id];
+
+                    return (
+                        <div key={log.id} className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all ${selectedRows.includes(log.id) ? 'ring-2 ring-indigo-500' : ''}`}>
+                            <div className="p-4 space-y-3">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <input type="checkbox" checked={selectedRows.includes(log.id)} onChange={() => toggleRowSelection(log.id)} className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                        <div className="flex flex-col">
+                                            <a href={log.url || "#"} target="_blank" rel="noopener noreferrer" className="text-lg font-bold text-gray-900 flex items-center gap-1 active:text-indigo-600">
+                                                {log.name}
+                                                {log.url && <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>}
+                                            </a>
+                                            <div className="mt-1">
+                                                {editingPriority === log.id ? (
+                                                    <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-full border">
+                                                        {['none', 'yellow', 'orange', 'red'].map(color => (
+                                                            <button
+                                                                key={color}
+                                                                onClick={() => handlePriorityChange(log.id, color)}
+                                                                className={`w-5 h-5 rounded-full ${color === 'red' ? 'bg-red-500' : color === 'orange' ? 'bg-orange-500' : color === 'yellow' ? 'bg-yellow-400' : 'bg-gray-200'}`}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <button onClick={() => setEditingPriority(log.id)} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${getPriorityBadgeClass(log.priority_color)}`}>
+                                                        {log.priority_color !== 'none' ? log.priority_color : 'Set Priority'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleDeleteShow(log.id)} className="text-gray-400 p-2">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                    {editingNotes === log.id ? (
+                                        <div className="w-full relative">
+                                            <textarea
+                                                value={tempNotes}
+                                                onChange={e => setTempNotes(e.target.value)}
+                                                className="w-full text-sm p-2 border-gray-300 rounded focus:border-indigo-500"
+                                                rows={2}
+                                            />
+                                            <button onClick={() => handleNotesSubmit(log.id)} className="mt-2 text-xs bg-indigo-600 text-white px-2 py-1 rounded">Save</button>
+                                        </div>
+                                    ) : (
+                                        <div onClick={() => { setEditingNotes(log.id); setTempNotes(log.notes || ""); }}>
+                                            <p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Notes</p>
+                                            {log.notes ? <p className="text-sm text-gray-700">{log.notes}</p> : <p className="text-xs text-gray-400 italic">Tap to add notes</p>}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                                    <div className="flex -space-x-2">
+                                        {users.slice(0, 3).map((u, i) => (
+                                            <div key={i} className="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-bold text-gray-600">{u.user_name.charAt(0)}</div>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {!users.some(u => u.user_id === currentUser?.id) && (
+                                            <button onClick={() => openJoinModal(log.id)} className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold uppercase">Join</button>
+                                        )}
+                                        <button onClick={() => toggleExpand(log.id)} className={`px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold uppercase flex items-center gap-1 ${isExpanded ? 'bg-indigo-600 text-white' : ''}`}>
+                                            {users.length} Users
+                                            <svg className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Mobile Expanded Users */}
+                            {isExpanded && (
+                                <div className="border-t border-gray-200 bg-gray-50 p-4 space-y-3">
+                                    {users.length === 0 ? <p className="text-center text-sm text-gray-500">No users yet.</p> : users.map(user => (
+                                        <div key={user.id} className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="font-bold text-gray-900 text-sm">{user.user_name}</p>
+                                                    <p className="text-xs text-gray-500">{user.user_email}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleToggleUserStatus(user)}
+                                                    disabled={user.user_id !== currentUser?.id}
+                                                    className={`px-2 py-1 rounded text-xs font-bold ${user.status ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                                                >
+                                                    {user.status ? 'Checked' : 'Pending'}
+                                                </button>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-gray-500">
+                                                <span>{user.check_start_date || 'N/A'} - {user.check_end_date || 'N/A'}</span>
+                                                {user.user_id === currentUser?.id && (
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => openEditModal(user)} className="text-indigo-600">Edit</button>
+                                                        <button onClick={() => handleDeleteUser(user.id, log.id)} className="text-red-500">Leave</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
 
             {logs.length === 0 && (

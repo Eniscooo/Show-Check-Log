@@ -27,52 +27,84 @@ export default function NotificationBell() {
     }, []);
 
     async function checkForOverdueItems() {
-        const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000);
+        try {
+            // Get all shows with their participants
+            const { data: shows, error } = await supabase
+                .from("shows")
+                .select(`
+                    id, 
+                    name,
+                    show_participants (
+                        id,
+                        user_id,
+                        status,
+                        last_checked_at,
+                        status_changed_at
+                    )
+                `);
 
-        // Get all shows with their users
-        const { data: shows } = await supabase
-            .from("show_logs")
-            .select("id, show_name");
-
-        if (!shows) return;
-
-        const newNotifications = [];
-
-        for (const show of shows) {
-            const { data: users } = await supabase
-                .from("show_users")
-                .select("*")
-                .eq("show_id", show.id);
-
-            if (!users || users.length === 0) continue;
-
-            // Check if ALL users are pending
-            const allPending = users.every(u => !u.status);
-
-            // Check if last check date is more than 8 hours ago
-            const lastChecked = users
-                .filter(u => u.date_checked)
-                .map(u => new Date(u.date_checked + 'T' + (u.time_checked || '00:00')))
-                .sort((a, b) => b - a)[0];
-
-            if (allPending && lastChecked && lastChecked < eightHoursAgo) {
-                // Calculate hours overdue
-                const hoursOverdue = Math.floor((Date.now() - lastChecked) / (1000 * 60 * 60));
-                newNotifications.push({
-                    id: show.id,
-                    message: `No checks for "${show.show_name}" in ${hoursOverdue} hours`,
-                    showName: show.show_name,
-                    hoursOverdue,
-                    timestamp: new Date().toISOString()
-                });
+            if (error || !shows) {
+                console.error("Error checking notifications:", error);
+                return;
             }
-        }
 
-        if (newNotifications.length > 0) {
-            setNotifications(newNotifications);
-            setHasUnread(true);
-            // Play ding sound
-            playDingSound();
+            // Group participants by user to count their total shows
+            const userShowCounts = {};
+            shows.forEach(show => {
+                show.show_participants?.forEach(p => {
+                    userShowCounts[p.user_id] = (userShowCounts[p.user_id] || 0) + 1;
+                });
+            });
+
+            const newNotifications = [];
+            const now = new Date();
+
+            for (const show of shows) {
+                const participants = show.show_participants || [];
+
+                for (const participant of participants) {
+                    if (participant.status === true) continue; // Only care about Pending
+
+                    const count = userShowCounts[participant.user_id] || 1;
+                    const hoursLimit = count >= 3 ? 12 : 24;
+                    const timeLimit = hoursLimit * 60 * 60 * 1000;
+
+                    // Use status_changed_at if available, else created_at
+                    const baseTime = new Date(participant.status_changed_at || participant.created_at || now).getTime();
+
+                    if (now.getTime() - baseTime > timeLimit) {
+                        const hoursOverdue = Math.floor((now.getTime() - baseTime) / (1000 * 60 * 60));
+
+                        newNotifications.push({
+                            id: `${show.id}-${participant.id}`,
+                            message: `"${show.name}" overdue for check (${hoursOverdue}h ago)`,
+                            showName: show.name,
+                            hoursOverdue,
+                            timestamp: new Date().toISOString()
+                        });
+                        // One notification per show is enough
+                        break;
+                    }
+                }
+            }
+
+            if (newNotifications.length > 0) {
+                // Only update if different to avoid infinite loops/re-renders
+                setNotifications(prev => {
+                    if (JSON.stringify(prev) !== JSON.stringify(newNotifications)) {
+                        playDingSound();
+                        return newNotifications;
+                    }
+                    return prev;
+                });
+                setHasUnread(true);
+            } else {
+                setNotifications([]);
+                setHasUnread(false);
+            }
+
+        } catch (err) {
+            console.error("Notification check failed:", err);
         }
     }
 

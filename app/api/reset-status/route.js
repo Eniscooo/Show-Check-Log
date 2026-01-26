@@ -2,69 +2,76 @@ import { supabase } from "../../lib/supabase";
 
 export async function GET(request) {
     try {
-        // Get reset interval from alert_settings (default 8 hours)
-        const { data: settings } = await supabase
-            .from("alert_settings")
-            .select("*")
-            .single();
-
-        const resetHours = settings?.reset_interval_hours || 8;
-        const thresholdMs = resetHours * 60 * 60 * 1000;
         const now = new Date();
+        const interval12Hours = 12 * 60 * 60 * 1000;
+        const interval24Hours = 24 * 60 * 60 * 1000;
 
-        // Find all checked items where status_updated_at is older than threshold
-        const { data: checkedLogs, error: logsError } = await supabase
-            .from("show_logs")
-            .select("*")
+        // 1. Get all checked participants
+        const { data: checkedParticipants, error: fetchError } = await supabase
+            .from("show_participants")
+            .select("id, user_id, last_checked_at")
             .eq("status", true)
-            .not("status_updated_at", "is", null);
+            .not("last_checked_at", "is", null);
 
-        if (logsError) {
-            return Response.json({
-                success: false,
-                error: "Failed to fetch logs"
-            }, { status: 500 });
+        if (fetchError) throw fetchError;
+
+        if (!checkedParticipants || checkedParticipants.length === 0) {
+            return Response.json({ success: true, message: "No items need reset", resetCount: 0 });
         }
 
-        // Filter items that need to be reset
-        const itemsToReset = checkedLogs?.filter(log => {
-            const updatedAt = new Date(log.status_updated_at);
-            return (now - updatedAt) > thresholdMs;
-        }) || [];
+        // 2. Count how many shows EACH USER is participating in
+        // Get unique user_ids from checkedParticipants to optimize fetching
+        const uniqueUserIds = [...new Set(checkedParticipants.map(p => p.user_id))];
 
-        if (itemsToReset.length === 0) {
-            return Response.json({
-                success: true,
-                message: "No items need to be reset",
-                resetCount: 0
-            });
+        // Fetch counts for all relevant users
+        const { data: userShowCountsData, error: countError } = await supabase
+            .from("show_participants")
+            .select("user_id");
+
+        if (countError) throw countError;
+
+        const userShowCounts = {};
+        userShowCountsData?.forEach(p => {
+            userShowCounts[p.user_id] = (userShowCounts[p.user_id] || 0) + 1;
+        });
+
+        // 3. Determine which ones to reset
+        const idsToReset = [];
+
+        checkedParticipants.forEach(participant => {
+            const count = userShowCounts[participant.user_id] || 1;
+            // <=2 -> 24h, >=3 -> 12h
+            const timeLimit = count >= 3 ? interval12Hours : interval24Hours;
+
+            const lastChecked = new Date(participant.last_checked_at).getTime();
+
+            if (now.getTime() - lastChecked > timeLimit) {
+                idsToReset.push(participant.id);
+            }
+        });
+
+        if (idsToReset.length === 0) {
+            return Response.json({ success: true, message: "No items overdue", resetCount: 0 });
         }
 
-        // Reset all overdue items to pending
-        const idsToReset = itemsToReset.map(item => item.id);
-
+        // 4. Perform the update
         const { error: updateError } = await supabase
-            .from("show_logs")
+            .from("show_participants")
             .update({
                 status: false,
-                status_updated_at: null
+                last_checked_at: null,
+                status_changed_at: now.toISOString()
             })
             .in("id", idsToReset);
 
-        if (updateError) {
-            return Response.json({
-                success: false,
-                error: "Failed to reset items"
-            }, { status: 500 });
-        }
+        if (updateError) throw updateError;
 
-        console.log(`Auto-reset: ${itemsToReset.length} items reset to pending`);
+        console.log(`Manual Reset: ${idsToReset.length} items reset to pending`);
 
         return Response.json({
             success: true,
-            message: `Reset ${itemsToReset.length} items to pending`,
-            resetCount: itemsToReset.length,
-            items: itemsToReset.map(i => ({ id: i.id, show_name: i.show_name }))
+            message: `Reset ${idsToReset.length} items to pending`,
+            resetCount: idsToReset.length
         });
 
     } catch (error) {

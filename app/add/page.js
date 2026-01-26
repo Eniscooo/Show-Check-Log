@@ -5,36 +5,17 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import Link from "next/link";
 
-export default function  AddEntry() {
+export default function AddEntry() {
     const router = useRouter();
-    const [checkStartDate, setCheckStartDate] = useState("");
-    const [checkEndDate, setCheckEndDate] = useState("");
+    const [name, setName] = useState("");
+    const [url, setUrl] = useState("");
     const [submitting, setSubmitting] = useState(false);
-    const [user, setUser] = useState(null);
-    const [userName, setUserName] = useState("");
-
-    useEffect(() => {
-        async function getUser() {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                setUser(user);
-                // Get user's name from metadata
-                const firstName = user.user_metadata?.first_name || "";
-                const lastName = user.user_metadata?.last_name || "";
-                const username = user.user_metadata?.username || "";
-                // Use full name if available, otherwise username
-                const displayName = (firstName && lastName) 
-                    ? `${firstName} ${lastName}` 
-                    : username || user.email?.split('@')[0] || "User";
-                setUserName(displayName);
-            }
-        }
-        getUser();
-    }, []);
 
     async function handleSubmit(e) {
         e.preventDefault();
         setSubmitting(true);
+
+        const { data: { user } } = await supabase.auth.getUser();
 
         if (!user) {
             alert("You must be logged in to add a show");
@@ -42,28 +23,45 @@ export default function  AddEntry() {
             return;
         }
 
-        // Build the insert object using the correct column names from your schema
-        const insertData = {
-            show_name: userName,
-            show_url: null,
-            status: false,
-            priority_color: 'none',
-            user_id: user.id,
-            // Use the existing column names: check_starting and checked_through
-            check_starting: checkStartDate || null,
-            checked_through: checkEndDate || null
-        };
+        // 1. Create the Show
+        const { data: showData, error: showError } = await supabase
+            .from("shows")
+            .insert([{
+                name: name,
+                url: url || null,
+                notes: "" // Initialize empty notes
+            }])
+            .select()
+            .single();
 
-        const { error } = await supabase.from("show_logs").insert([insertData]);
-
-        if (error) {
-            console.error("Error inserting data:", error);
-            alert(`Error: ${error.message || "Unknown error"}`);
+        if (showError) {
+            console.error("Error creating show:", showError);
+            alert(`Error: ${showError.message}`);
             setSubmitting(false);
             return;
         }
 
+        // 2. Auto-join the creator to the show
+        if (showData) {
+            const { error: joinError } = await supabase
+                .from("show_participants")
+                .insert([{
+                    show_id: showData.id,
+                    user_id: user.id,
+                    user_name: user.user_metadata?.first_name
+                        ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`
+                        : (user.email?.split('@')[0] || "User"),
+                    status: false
+                }]);
+
+            if (joinError) {
+                console.error("Error joining show:", joinError);
+                // Don't block navigation, just warn
+            }
+        }
+
         router.push("/");
+        router.refresh();
     }
 
     return (
@@ -73,7 +71,7 @@ export default function  AddEntry() {
                     <div>
                         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Add New Show</h1>
                         <p className="mt-2 text-sm text-gray-500">
-                            Create a show to start tracking checks.
+                            Create a show for the team to track.
                         </p>
                     </div>
                     <Link href="/">
@@ -85,35 +83,32 @@ export default function  AddEntry() {
 
                 <div className="bg-white rounded-xl shadow-lg ring-1 ring-gray-900/5 overflow-hidden">
                     <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                        {/* User Info Display */}
-                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-4">
-                            <p className="text-sm text-gray-600 mb-1">Show will be created for:</p>
-                            <p className="text-lg font-semibold text-indigo-900">{userName || "Loading..."}</p>
-                        </div>
-
-                        {/* Check Start Date */}
+                        {/* Show Name */}
                         <div>
                             <label className="block text-sm font-semibold text-slate-900 mb-1">
-                                Check Start Date
+                                Show Name *
                             </label>
                             <input
-                                type="date"
+                                type="text"
+                                required
                                 className="block w-full rounded-md border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
-                                value={checkStartDate}
-                                onChange={e => setCheckStartDate(e.target.value)}
+                                placeholder="e.g. Morning News"
+                                value={name}
+                                onChange={e => setName(e.target.value)}
                             />
                         </div>
 
-                        {/* Check End Date */}
+                        {/* Show URL */}
                         <div>
                             <label className="block text-sm font-semibold text-slate-900 mb-1">
-                                Check End Date
+                                Show URL (Optional)
                             </label>
                             <input
-                                type="date"
+                                type="url"
                                 className="block w-full rounded-md border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
-                                value={checkEndDate}
-                                onChange={e => setCheckEndDate(e.target.value)}
+                                placeholder="https://..."
+                                value={url}
+                                onChange={e => setUrl(e.target.value)}
                             />
                         </div>
 
@@ -125,7 +120,7 @@ export default function  AddEntry() {
                             </Link>
                             <button
                                 type="submit"
-                                disabled={submitting}
+                                disabled={submitting || !name.trim()}
                                 className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md disabled:opacity-50"
                             >
                                 {submitting ? "Creating..." : "Create Show"}

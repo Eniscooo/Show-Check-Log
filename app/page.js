@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import ShowTable from "./components/ShowTable";
-import NotificationBell from "./components/NotificationBell";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Navbar from "./components/Navbar";
 
 export default function Dashboard() {
   const [logs, setLogs] = useState([]);
@@ -20,61 +20,33 @@ export default function Dashboard() {
     try {
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError) {
         console.error("Error getting user:", userError);
         setLoading(false);
         return;
       }
-      
-      if (!user) {
-        setLoading(false);
-        return;
-      }
 
-      // Filter logs by user_id
+      // Fetch all shows and their participants
+      // We want to see ALL shows so users can join them
       const { data, error } = await supabase
-        .from("show_logs")
-        .select("*")
-        .eq("user_id", user.id)
+        .from("shows")
+        .select(`
+          *,
+          show_participants (
+            *
+          )
+        `)
         .order("created_at", { ascending: true });
 
       if (error) {
-        // Check if error is about missing column (common error codes: PGRST116, 42703)
-        const errorMessage = error.message || "";
-        const errorCode = error.code || "";
-        const errorDetails = error.details || "";
-        
-        console.error("Error fetching logs:");
-        console.error("Message:", errorMessage);
-        console.error("Code:", errorCode);
-        console.error("Details:", errorDetails);
-        console.error("Full error:", JSON.stringify(error, null, 2));
-        
-        // If column doesn't exist, provide helpful message
-        if (errorMessage.includes("user_id") || errorMessage.includes("column") || 
-            errorCode === "PGRST116" || errorCode === "42703" ||
-            errorDetails.includes("user_id")) {
-          console.error("\n⚠️  The 'user_id' column doesn't exist in your 'show_logs' table.");
-          console.error("Please run this SQL in your Supabase SQL Editor:");
-          console.error("ALTER TABLE show_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);");
-          console.error("\nFor now, fetching all logs (not filtered by user)...");
-          
-          // Temporary fallback: fetch all logs
-          const { data: allData, error: allError } = await supabase
-            .from("show_logs")
-            .select("*")
-            .order("created_at", { ascending: true });
-          
-          if (allError) {
-            console.error("Error fetching logs (fallback):", allError);
-            setLogs([]);
-          } else {
-            setLogs(allData || []);
-          }
-        } else {
-          setLogs([]);
+        console.error("Error fetching shows:", error);
+
+        // Check for specific errors to give helpful feedback
+        if (error.code === "PGRST116" || error.code === "42703" || error.message.includes("relation")) {
+          console.error("Database schema mismatch. Please run the migration SQL.");
         }
+        setLogs([]);
       } else {
         setLogs(data || []);
       }
@@ -86,20 +58,17 @@ export default function Dashboard() {
     }
   }
 
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
-
   async function triggerAutoReset() {
     try {
       // Call internal API to trigger reset if needed
       await fetch('/api/reset-status');
+      // Trigger alerts for overdue pending shows
+      await fetch('/api/send-alerts');
+
       // Re-fetch logs to reflect any changes
       fetchLogs();
     } catch (e) {
-      console.error("Auto-reset check failed:", e);
+      console.error("Auto-reset/Alert check failed:", e);
     }
   }
 
@@ -111,40 +80,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50/50">
-      {/* Header */}
-      <header className="bg-slate-900 shadow-lg border-b border-white/10 relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 opacity-50"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-500/10 p-2.5 rounded-xl border border-indigo-500/20 backdrop-blur-sm">
-              <svg className="h-6 w-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Show Check Log</h1>
-              <p className="text-xs text-indigo-200/60 font-medium">Monitoring Dashboard</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Notification Bell */}
-            <div className="bg-white/5 rounded-full p-1 border border-white/10 hover:bg-white/10 transition-colors">
-              <NotificationBell />
-            </div>
-
-            {/* Sign Out Button */}
-            <button
-              onClick={handleSignOut}
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-500/20 text-xs font-semibold transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">

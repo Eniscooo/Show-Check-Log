@@ -33,11 +33,15 @@ export async function middleware(request) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user && request.nextUrl.pathname !== '/login' && request.nextUrl.pathname !== '/register') {
+    const authRoutes = ['/login', '/register', '/forgot-password'];
+    const isAuthRoute = authRoutes.includes(request.nextUrl.pathname);
+    const isResetRoute = request.nextUrl.pathname === '/reset-password';
+
+    if (!user && !isAuthRoute && !isResetRoute) {
         return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
+    if (user && isAuthRoute) {
         return NextResponse.redirect(new URL('/', request.url))
     }
 
