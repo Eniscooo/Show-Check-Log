@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link";
+import toast from "react-hot-toast";
+import ConfirmModal from "../../components/ConfirmModal";
 
 export default function EditEntry() {
     const router = useRouter();
@@ -25,6 +27,16 @@ export default function EditEntry() {
     const [assignedUsers, setAssignedUsers] = useState([]);
     const [editingUser, setEditingUser] = useState(null);
 
+    // Confirm Modal
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: "",
+        message: "",
+        isDanger: true,
+        confirmText: "Confirm",
+        onConfirm: () => {}
+    });
+
     useEffect(() => {
         fetchEntry();
         fetchAssignedUsers();
@@ -38,7 +50,7 @@ export default function EditEntry() {
             .single();
 
         if (error) {
-            alert("Error loading entry");
+            toast.error("Error loading entry");
             return;
         }
 
@@ -98,18 +110,31 @@ export default function EditEntry() {
 
         if (error) {
             console.error("Error updating:", error);
-            alert(`Error: ${error.message || "Failed to update"}`);
+            toast.error(`Error: ${error.message || "Failed to update"}`);
             return;
         }
+
+        toast.success("Show updated successfully");
 
         router.push("/");
     }
 
-    async function handleDeleteUser(userId) {
-        if (!confirm("Remove this user from the show?")) return;
+    function handleDeleteUserClick(userId) {
+        setConfirmModal({
+            isOpen: true,
+            title: "Remove User",
+            message: "Are you sure you want to remove this user from the show?",
+            isDanger: true,
+            confirmText: "Remove",
+            onConfirm: () => executeDeleteUser(userId)
+        });
+    }
 
+    async function executeDeleteUser(userId) {
+        const toastId = toast.loading("Removing user...");
         await supabase.from("show_users").delete().eq("id", userId);
         setAssignedUsers(assignedUsers.filter(u => u.id !== userId));
+        toast.success("User removed", { id: toastId });
     }
 
     async function handleUpdateUserStatus(userId, newStatus) {
@@ -143,6 +168,16 @@ export default function EditEntry() {
 
     return (
         <main className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+            <ConfirmModal 
+                isOpen={confirmModal.isOpen}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                isDanger={confirmModal.isDanger}
+                confirmText={confirmModal.confirmText}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
+
             <div className="max-w-3xl mx-auto">
                 <div className="mb-8">
                     <Link href="/" className="text-sm text-indigo-600 hover:text-indigo-800 mb-4 inline-block">
@@ -274,14 +309,15 @@ export default function EditEntry() {
                                             <button
                                                 onClick={() => handleUpdateUserStatus(user.id, !user.status)}
                                                 className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${user.status
-                                                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                                                        : 'bg-red-100 text-red-800 hover:bg-red-200'
+                                                    ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                                    : 'bg-red-100 text-red-800 hover:bg-red-200'
                                                     }`}
                                             >
                                                 {user.status ? 'Checked' : 'Pending'} - Click to Toggle
                                             </button>
                                             <button
-                                                onClick={() => handleDeleteUser(user.id)}
+                                                type="button"
+                                                onClick={() => handleDeleteUserClick(user.id)}
                                                 className="text-red-600 hover:text-red-800 text-sm font-medium"
                                             >
                                                 Remove
@@ -289,7 +325,7 @@ export default function EditEntry() {
                                         </div>
                                     </div>
                                     {user.checked_at && (
-                                        <p className="text-xs text-gray-400 mt-1 ml-6">
+                                        <p className="text-lg text-gray-400 mt-1 ml-6">
                                             Last checked: {new Date(user.checked_at).toLocaleString()}
                                         </p>
                                     )}

@@ -8,10 +8,11 @@ export default function NotificationBell() {
     const [hasUnread, setHasUnread] = useState(false);
     const dropdownRef = useRef(null);
 
-    // Check for 8-hour overdue items every minute
+    // Initial check + periodic re-check
     useEffect(() => {
         checkForOverdueItems();
-        const interval = setInterval(checkForOverdueItems, 60000);
+        // Re-check every 30 minutes
+        const interval = setInterval(checkForOverdueItems, 30 * 60 * 1000);
         return () => clearInterval(interval);
     }, []);
 
@@ -27,6 +28,21 @@ export default function NotificationBell() {
     }, []);
 
     async function checkForOverdueItems() {
+        // If user has cleared notifications, respect that until next fresh check window
+        const dismissedUntil = localStorage.getItem('notificationsDismissedUntil');
+        if (dismissedUntil) {
+            const dismissTime = parseInt(dismissedUntil);
+            // Respect the dismiss for 2 hours
+            if (Date.now() - dismissTime < 2 * 60 * 60 * 1000) {
+                setNotifications([]);
+                setHasUnread(false);
+                return;
+            } else {
+                // Dismiss window expired, allow fresh check
+                localStorage.removeItem('notificationsDismissedUntil');
+            }
+        }
+
         try {
             // Get all shows with their participants
             const { data: shows, error } = await supabase
@@ -39,7 +55,8 @@ export default function NotificationBell() {
                         user_id,
                         status,
                         last_checked_at,
-                        status_changed_at
+                        status_changed_at,
+                        created_at
                     )
                 `);
 
@@ -48,60 +65,49 @@ export default function NotificationBell() {
                 return;
             }
 
-            // Group participants by user to count their total shows
-            const userShowCounts = {};
-            shows.forEach(show => {
-                show.show_participants?.forEach(p => {
-                    userShowCounts[p.user_id] = (userShowCounts[p.user_id] || 0) + 1;
-                });
-            });
-
             const newNotifications = [];
             const now = new Date();
+            const OVERDUE_HOURS = 48; // Alert after 48 hours as requested
+            const timeLimit = OVERDUE_HOURS * 60 * 60 * 1000;
 
             for (const show of shows) {
                 const participants = show.show_participants || [];
+                
+                // Skip if no participants
+                if (participants.length === 0) continue;
 
+                // Check if ALL participants in this show are pending (status === false)
+                const allPending = participants.every(p => p.status === false || p.status === null);
+                
+                if (!allPending) continue; // At least one user has checked — not overdue
+
+                // Find the oldest pending participant's timestamp
+                let oldestPendingTime = null;
                 for (const participant of participants) {
-                    if (participant.status === true) continue; // Only care about Pending
-
-                    const count = userShowCounts[participant.user_id] || 1;
-                    const hoursLimit = count >= 3 ? 12 : 24;
-                    const timeLimit = hoursLimit * 60 * 60 * 1000;
-
-                    // Use status_changed_at if available, else created_at
-                    const baseTime = new Date(participant.status_changed_at || participant.created_at || now).getTime();
-
-                    if (now.getTime() - baseTime > timeLimit) {
-                        const hoursOverdue = Math.floor((now.getTime() - baseTime) / (1000 * 60 * 60));
-
-                        newNotifications.push({
-                            id: `${show.id}-${participant.id}`,
-                            message: `"${show.name}" overdue for check (${hoursOverdue}h ago)`,
-                            showName: show.name,
-                            hoursOverdue,
-                            timestamp: new Date().toISOString()
-                        });
-                        // One notification per show is enough
-                        break;
+                    const baseTime = new Date(
+                        participant.status_changed_at || participant.created_at || now
+                    ).getTime();
+                    
+                    if (!oldestPendingTime || baseTime < oldestPendingTime) {
+                        oldestPendingTime = baseTime;
                     }
+                }
+
+                if (oldestPendingTime && (now.getTime() - oldestPendingTime > timeLimit)) {
+                    const hoursOverdue = Math.floor((now.getTime() - oldestPendingTime) / (1000 * 60 * 60));
+
+                    newNotifications.push({
+                        id: `show-${show.id}`,
+                        message: `"${show.name}" — all users pending for ${hoursOverdue}h`,
+                        showName: show.name,
+                        hoursOverdue,
+                        timestamp: now.toISOString()
+                    });
                 }
             }
 
-            if (newNotifications.length > 0) {
-                // Only update if different to avoid infinite loops/re-renders
-                setNotifications(prev => {
-                    if (JSON.stringify(prev) !== JSON.stringify(newNotifications)) {
-                        playDingSound();
-                        return newNotifications;
-                    }
-                    return prev;
-                });
-                setHasUnread(true);
-            } else {
-                setNotifications([]);
-                setHasUnread(false);
-            }
+            setNotifications(newNotifications);
+            setHasUnread(newNotifications.length > 0);
 
         } catch (err) {
             console.error("Notification check failed:", err);
@@ -140,6 +146,19 @@ export default function NotificationBell() {
         setNotifications([]);
         setHasUnread(false);
         setIsOpen(false);
+        // Store a dismiss timestamp so on refresh we don't immediately reload them
+        localStorage.setItem('notificationsDismissedUntil', Date.now().toString());
+    }
+
+    function dismissSingle(notifId) {
+        setNotifications(prev => {
+            const updated = prev.filter(n => n.id !== notifId);
+            if (updated.length === 0) {
+                setHasUnread(false);
+                localStorage.setItem('notificationsDismissedUntil', Date.now().toString());
+            }
+            return updated;
+        });
     }
 
     return (
@@ -155,20 +174,20 @@ export default function NotificationBell() {
                 </svg>
 
                 {/* Notification Badge */}
-                {(hasUnread || notifications.length > 0) && (
+                {notifications.length > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white animate-pulse">
-                        {notifications.length || '!'}
+                        {notifications.length}
                     </span>
                 )}
             </button>
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                    <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                        <h3 className="font-semibold text-gray-900">🔔 Notifications</h3>
+                <div className="absolute right-0 mt-2 w-80 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.4)] border border-white/10 z-50">
+                    <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="font-semibold text-white text-sm">🔔 Notifications</h3>
                         {notifications.length > 0 && (
-                            <button onClick={clearNotifications} className="text-xs text-gray-500 hover:text-gray-700">
+                            <button onClick={clearNotifications} className="text-xs text-gray-400 hover:text-white transition-colors">
                                 Clear all
                             </button>
                         )}
@@ -176,20 +195,27 @@ export default function NotificationBell() {
 
                     <div className="max-h-80 overflow-y-auto">
                         {notifications.length === 0 ? (
-                            <div className="px-4 py-8 text-center text-gray-500">
-                                <p className="text-sm">No overdue alerts</p>
-                                <p className="text-xs mt-1">Alerts trigger when all users are pending for 8+ hours</p>
+                            <div className="px-4 py-8 text-center">
+                                <p className="text-sm text-gray-400">No overdue alerts</p>
+                                <p className="text-xs text-gray-600 mt-1">Alerts trigger when all users are pending for 48+ hours</p>
                             </div>
                         ) : (
-                            <ul className="divide-y divide-gray-100">
+                            <ul className="divide-y divide-white/5">
                                 {notifications.map(notif => (
-                                    <li key={notif.id} className="px-4 py-3 hover:bg-gray-50">
+                                    <li key={notif.id} className="px-4 py-3 hover:bg-white/5 transition-colors group">
                                         <div className="flex items-start gap-3">
-                                            <span className="text-red-500 text-lg">⚠️</span>
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-900">{notif.message}</p>
-                                                <p className="text-xs text-gray-500 mt-1">All users pending - needs attention</p>
+                                            <span className="text-red-500 text-lg shrink-0">⚠️</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-200">{notif.message}</p>
+                                                <p className="text-xs text-gray-500 mt-1">All users pending — needs attention</p>
                                             </div>
+                                            <button
+                                                onClick={() => dismissSingle(notif.id)}
+                                                className="text-gray-600 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                                                title="Dismiss"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
                                         </div>
                                     </li>
                                 ))}

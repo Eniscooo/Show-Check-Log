@@ -4,10 +4,9 @@ import nodemailer from "nodemailer";
 export async function GET(request) {
     try {
         const now = new Date();
-        const interval12Hours = 12 * 60 * 60 * 1000;
-        const interval24Hours = 24 * 60 * 60 * 1000;
+        const interval48Hours = 48 * 60 * 60 * 1000;
 
-        // 1. Get all pending participants with their show and profile info
+        // 1. Get all pending participants with their show info
         const { data: pendingParticipants, error: fetchError } = await supabase
             .from("show_participants")
             .select(`
@@ -15,9 +14,10 @@ export async function GET(request) {
                 user_id,
                 show_id,
                 status_changed_at,
+                alert_sent_at,
                 user_name,
-                shows (name),
-                profiles:user_id (email, full_name)
+                user_email,
+                shows (name)
             `)
             .eq("status", false)
             .not("status_changed_at", "is", null);
@@ -29,7 +29,6 @@ export async function GET(request) {
         }
 
         // 2. Count how many shows EACH USER is participating in
-        const uniqueUserIds = [...new Set(pendingParticipants.map(p => p.user_id))];
         const { data: allParticipants, error: countError } = await supabase
             .from("show_participants")
             .select("user_id");
@@ -41,25 +40,32 @@ export async function GET(request) {
             userShowCounts[p.user_id] = (userShowCounts[p.user_id] || 0) + 1;
         });
 
-        // 3. Filter participants who are overdue based on individual show count
+        // 3. Filter participants who are overdue (48hr threshold for all users)
         const alertsToSend = [];
         pendingParticipants.forEach(participant => {
-            const count = userShowCounts[participant.user_id] || 1;
-            // <=2 -> 24h, >=3 -> 12h (per individual)
-            const timeLimit = count >= 3 ? interval12Hours : interval24Hours;
-
             const changedAt = new Date(participant.status_changed_at).getTime();
-            if (now.getTime() - changedAt > timeLimit) {
+            const timeSinceChange = now.getTime() - changedAt;
+
+            // Throttle: only re-alert every 48 hours
+            let recentlyAlerted = false;
+            if (participant.alert_sent_at) {
+                const alertedAt = new Date(participant.alert_sent_at).getTime();
+                if (now.getTime() - alertedAt < interval48Hours) {
+                    recentlyAlerted = true;
+                }
+            }
+
+            if (timeSinceChange > interval48Hours && !recentlyAlerted) {
                 alertsToSend.push({
                     ...participant,
-                    userShowCount: count,
-                    hoursOverdue: Math.floor((now.getTime() - changedAt) / (1000 * 60 * 60))
+                    userShowCount: userShowCounts[participant.user_id] || 1,
+                    hoursOverdue: Math.floor(timeSinceChange / (1000 * 60 * 60))
                 });
             }
         });
 
         if (alertsToSend.length === 0) {
-            return Response.json({ success: true, message: "No overdue pending shows", count: 0 });
+            return Response.json({ success: true, message: "No overdue pending shows to alert", count: 0 });
         }
 
         // 4. Setup Gmail SMTP Transporter
@@ -76,23 +82,23 @@ export async function GET(request) {
             service: 'gmail',
             auth: {
                 user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS // Use Google App Password
+                pass: process.env.EMAIL_PASS
             }
         });
 
         // 5. Send Emails
         const results = [];
         for (const alert of alertsToSend) {
-            const email = alert.profiles?.email;
+            const email = alert.user_email;
             const showName = alert.shows?.name || "Unknown Show";
-            const userName = alert.user_name || alert.profiles?.full_name || "User";
-            const hoursLimit = alert.userShowCount >= 3 ? 12 : 24;
+            const userName = alert.user_name || "User";
+            const hoursLimit = 48;
 
             if (!email) {
                 results.push({
                     user: userName,
                     show: showName,
-                    status: "Skipped (no email)"
+                    status: "Skipped (no email on record)"
                 });
                 continue;
             }
@@ -133,6 +139,10 @@ export async function GET(request) {
                         </div>
                     `
                 });
+
+                // Mark alert as sent to prevent immediate resending
+                await supabase.from("show_participants").update({ alert_sent_at: new Date().toISOString() }).eq("id", alert.id);
+
                 results.push({
                     user: userName,
                     show: showName,
