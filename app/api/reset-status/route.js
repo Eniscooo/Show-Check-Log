@@ -68,6 +68,19 @@ export async function GET(request) {
 
         console.log(`Manual Reset: ${idsToReset.length} items reset to pending`);
 
+        // 5. Clean up old activity logs (older than 1 week)
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { error: cleanupError } = await supabase
+            .from("activity_log")
+            .delete()
+            .lt("created_at", oneWeekAgo);
+
+        if (cleanupError) {
+            console.error("Cleanup error:", cleanupError);
+        } else {
+            console.log("Cleanup: Removed activity logs older than 1 week");
+        }
+
         return Response.json({
             success: true,
             message: `Reset ${idsToReset.length} items to pending`,

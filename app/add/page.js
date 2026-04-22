@@ -61,8 +61,22 @@ export default function AddEntry() {
             }
         }
 
+        // 3. Log the activity
+        if (showData) {
+            const userName = user.user_metadata?.first_name
+                ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`
+                : (user.email?.split('@')[0] || "User");
+            await supabase.from("activity_log").insert([{
+                action: "created_show",
+                description: `added a new show: ${showData.name}`,
+                show_id: showData.id,
+                user_id: user.id,
+                user_name: userName
+            }]);
+        }
+
         toast.success("Show created successfully!");
-        router.push("/");
+        router.push("/shows");
         router.refresh();
     }
 
@@ -77,7 +91,7 @@ export default function AddEntry() {
                         <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Add New Show</h1>
 
                     </div>
-                    <Link href="/">
+                    <Link href="/shows">
                         <button className="px-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm transition-all flex items-center gap-2 group">
                             <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                             Back
@@ -85,7 +99,7 @@ export default function AddEntry() {
                     </Link>
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-indigo-500/5 ring-1 ring-gray-900/5 dark:ring-white/10 overflow-hidden transform transition-all">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-indigo-500/5 ring-1 ring-gray-900/5 dark:ring-transparent overflow-hidden transform transition-all">
                     <form onSubmit={handleSubmit} className="p-8 space-y-6">
                         {/* Show Name */}
                         <div>
@@ -117,7 +131,7 @@ export default function AddEntry() {
                         </div>
 
                         <div className="flex items-center justify-between gap-3 pt-6 mt-4 border-t border-gray-100 dark:border-slate-800/80">
-                            <Link href="/">
+                            <Link href="/shows">
                                 <button type="button" className="px-5 py-3 text-sm font-bold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
                                     Cancel
                                 </button>

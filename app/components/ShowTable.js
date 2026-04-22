@@ -4,6 +4,26 @@ import { supabase } from "../lib/supabase";
 import toast from "react-hot-toast";
 import ConfirmModal from "./ConfirmModal";
 
+function UserAvatar({ user, size = "w-8 h-8" }) {
+    const [avatarUrl, setAvatarUrl] = useState(null);
+    useEffect(() => {
+        if (!user?.user_id) return;
+        supabase.from('profiles').select('avatar_url').eq('id', user.user_id).single().then(({ data }) => {
+            if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+        });
+    }, [user?.user_id]);
+
+    const name = user?.user_name || "User";
+    if (avatarUrl) {
+        return <img src={avatarUrl} alt={name} className={`inline-block ${size} rounded-full ring-2 ring-white object-cover`} title={name} />;
+    }
+    return (
+        <div className={`inline-block ${size} rounded-full ring-2 ring-white bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-xs font-bold text-indigo-700 dark:text-indigo-300`} title={name}>
+            {name.charAt(0).toUpperCase()}
+        </div>
+    );
+}
+
 export default function ShowTable({ logs: initialLogs }) {
     const [logs, setLogs] = useState(initialLogs);
     const [selectedRows, setSelectedRows] = useState([]);
@@ -44,9 +64,66 @@ export default function ShowTable({ logs: initialLogs }) {
     });
     const [isAdmin, setIsAdmin] = useState(false);
 
+    // Search, Sort, Filter state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [sortBy, setSortBy] = useState("created_at_asc");
+    const [filterPriority, setFilterPriority] = useState("all");
+
+    // Screenshot state
+    const [screenshots, setScreenshots] = useState({});
+    const [uploadingShow, setUploadingShow] = useState(null);
+    const [lightboxImage, setLightboxImage] = useState(null);
+    const fileInputRef = useRef(null);
+    const activeUploadShowRef = useRef(null);
+
     useEffect(() => {
         setLogs(initialLogs);
     }, [initialLogs]);
+
+    // Fetch screenshots for expanded shows
+    useEffect(() => {
+        const expandedIds = Object.entries(expandedShows).filter(([, v]) => v).map(([k]) => k);
+        expandedIds.forEach(id => {
+            if (!screenshots[id]) fetchScreenshots(id);
+        });
+    }, [expandedShows]);
+
+    async function fetchScreenshots(showId) {
+        try {
+            const { data, error } = await supabase
+                .from("screenshot_uploads")
+                .select("*")
+                .eq("show_id", showId)
+                .order("created_at", { ascending: false });
+            if (!error && data) {
+                setScreenshots(prev => ({ ...prev, [showId]: data }));
+            }
+        } catch (e) { }
+    }
+
+    async function logActivity(action, description, showId = null) {
+        if (!currentUser) return;
+        const userName = getUserDisplayName();
+        try {
+            await supabase.from("activity_log").insert([{
+                user_id: currentUser.id,
+                user_name: userName,
+                action,
+                description,
+                show_id: showId
+            }]);
+        } catch (e) {
+            console.error("Failed to log activity:", e);
+        }
+    }
+
+    function getUserDisplayName() {
+        if (!currentUser) return "User";
+        const first = currentUser.user_metadata?.first_name || "";
+        const last = currentUser.user_metadata?.last_name || "";
+        const username = currentUser.user_metadata?.username || "";
+        return (first && last) ? `${first} ${last}` : username || currentUser.email?.split('@')[0] || "User";
+    }
 
     useEffect(() => {
         async function getCurrentUser() {
@@ -223,6 +300,11 @@ export default function ShowTable({ logs: initialLogs }) {
         }
 
         const toastId = toast.loading("Deleting show...");
+        const showName = logs.find(l => l.id === showId)?.name || 'Unknown';
+
+        // Log activity first with no showId to prevent cascade deletion
+        logActivity('deleted_show', `${getUserDisplayName()} deleted show "${showName}"`);
+
         const { error } = await supabase.from("shows").delete().eq("id", showId);
 
         if (!error) {
@@ -250,6 +332,7 @@ export default function ShowTable({ logs: initialLogs }) {
         const toastId = toast.loading("Removing user...");
         const { error } = await supabase.from("show_participants").delete().eq("id", userId);
         if (!error) {
+            const showName = logs.find(l => l.id === showId)?.name || 'Unknown';
             setLogs(prev => prev.map(log =>
                 log.id === showId ? {
                     ...log,
@@ -257,6 +340,7 @@ export default function ShowTable({ logs: initialLogs }) {
                 } : log
             ));
             toast.success("User removed", { id: toastId });
+            logActivity('left_show', `${getUserDisplayName()} left show "${showName}"`, showId);
         } else {
             toast.error("Error removing user: " + error.message, { id: toastId });
         }
@@ -349,6 +433,14 @@ export default function ShowTable({ logs: initialLogs }) {
 
             console.log("Notes updated successfully:", data);
 
+            // Fetch show name for activity logging
+            const showName = logs.find(l => l.id === showId)?.name || 'Unknown';
+            if (!tempNotes.trim()) {
+                logActivity('deleted_note', `${getUserDisplayName()} removed notes for show "${showName}"`, showId);
+            } else {
+                logActivity('updated_note', `${getUserDisplayName()} updated notes for show "${showName}"`, showId);
+            }
+
             // Update local state
             setLogs(prev => prev.map(log =>
                 log.id === showId ? { ...log, notes: tempNotes } : log
@@ -364,6 +456,14 @@ export default function ShowTable({ logs: initialLogs }) {
 
     async function handleJoinShow() {
         if (!joinForm.name.trim() || !showJoinModal || !currentUser) return;
+
+        // Prevent duplicate: check if user already in this show
+        const currentShow = logs.find(l => l.id === showJoinModal);
+        const alreadyJoined = currentShow?.show_participants?.some(p => p.user_id === currentUser.id);
+        if (alreadyJoined) {
+            toast.error("You have already joined this show.");
+            return;
+        }
 
         // Build insert data object
         const insertData = {
@@ -391,6 +491,7 @@ export default function ShowTable({ logs: initialLogs }) {
         }
 
         if (data && data[0]) {
+            const showName = logs.find(l => l.id === showJoinModal)?.name || 'Unknown';
             setLogs(prev => prev.map(log =>
                 log.id === showJoinModal ? {
                     ...log,
@@ -398,6 +499,7 @@ export default function ShowTable({ logs: initialLogs }) {
                 } : log
             ));
             setExpandedShows(prev => ({ ...prev, [showJoinModal]: true }));
+            logActivity('joined_show', `${getUserDisplayName()} joined show "${showName}"`, showJoinModal);
             setShowJoinModal(null);
             setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" });
         }
@@ -432,6 +534,7 @@ export default function ShowTable({ logs: initialLogs }) {
         }
 
         // Update local state
+        const showName = logs.find(l => l.id === user.show_id)?.name || 'Unknown';
         setLogs(prev => prev.map(log =>
             log.id === user.show_id ? {
                 ...log,
@@ -440,10 +543,207 @@ export default function ShowTable({ logs: initialLogs }) {
                 )
             } : log
         ));
+        logActivity(
+            newStatus ? 'status_checked' : 'status_unchecked',
+            `${getUserDisplayName()} marked "${showName}" as ${newStatus ? 'Checked' : 'Pending'}`,
+            user.show_id
+        );
     }
+
+    // Screenshot upload handler
+    async function handleScreenshotUpload(e, showId) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error("Please select an image file");
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error("File must be under 5MB");
+            return;
+        }
+
+        setUploadingShow(showId);
+        const toastId = toast.loading("Uploading screenshot...");
+
+        try {
+            const ext = file.name.split('.').pop();
+            const path = `${currentUser.id}/${showId}_${Date.now()}.${ext}`;
+
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('screenshots')
+                .upload(path, file);
+
+            if (uploadError) {
+                toast.error("Upload failed: " + uploadError.message, { id: toastId });
+                setUploadingShow(null);
+                return;
+            }
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('screenshots')
+                .getPublicUrl(path);
+
+            const { error: dbError } = await supabase.from("screenshot_uploads").insert([{
+                show_id: showId,
+                user_id: currentUser.id,
+                user_name: getUserDisplayName(),
+                file_url: publicUrl,
+                file_name: file.name
+            }]);
+
+            if (dbError) {
+                toast.error("Failed to save: " + dbError.message, { id: toastId });
+            } else {
+                toast.success("Screenshot uploaded!", { id: toastId });
+                fetchScreenshots(showId);
+                const showName = logs.find(l => l.id === showId)?.name || 'Unknown';
+                logActivity('uploaded_screenshot', `${getUserDisplayName()} uploaded a screenshot for "${showName}"`, showId);
+            }
+        } catch (err) {
+            toast.error("Upload error: " + err.message, { id: toastId });
+        } finally {
+            setUploadingShow(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    }
+
+    async function handleDeleteScreenshot(screenshotId, showId) {
+        const { error } = await supabase.from("screenshot_uploads").delete().eq("id", screenshotId);
+        if (!error) {
+            toast.success("Screenshot deleted");
+            fetchScreenshots(showId);
+        } else {
+            toast.error("Failed to delete: " + error.message);
+        }
+    }
+
+    // ── Filtered & Sorted Logs ──────────────────────────────────────────────
+    const priorityOrder = { red: 0, high: 0, orange: 1, medium: 1, yellow: 2, low: 2, green: 3, none: 4 };
+
+    const filteredSortedLogs = React.useMemo(() => {
+        let result = [...logs];
+
+        // Filter by search
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(log =>
+                log.name?.toLowerCase().includes(q) ||
+                log.notes?.toLowerCase().includes(q)
+            );
+        }
+
+        // Filter by priority
+        if (filterPriority !== "all") {
+            result = result.filter(log => {
+                const pc = log.priority_color || 'none';
+                if (filterPriority === "none") return !pc || pc === 'none';
+                return pc === filterPriority;
+            });
+        }
+
+        // Sort
+        result.sort((a, b) => {
+            switch (sortBy) {
+                case "name_asc": return (a.name || '').localeCompare(b.name || '');
+                case "name_desc": return (b.name || '').localeCompare(a.name || '');
+                case "priority_high": return (priorityOrder[a.priority_color] ?? 4) - (priorityOrder[b.priority_color] ?? 4);
+                case "priority_low": return (priorityOrder[b.priority_color] ?? 4) - (priorityOrder[a.priority_color] ?? 4);
+                case "users_most": return (b.show_participants?.length || 0) - (a.show_participants?.length || 0);
+                case "created_at_desc": return new Date(b.created_at) - new Date(a.created_at);
+                case "created_at_asc":
+                default: return new Date(a.created_at) - new Date(b.created_at);
+            }
+        });
+
+        return result;
+    }, [logs, searchQuery, sortBy, filterPriority]);
+
+    // Hidden file input for screenshots
+    const hiddenFileInput = (
+        <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+                if (activeUploadShowRef.current) {
+                    handleScreenshotUpload(e, activeUploadShowRef.current);
+                }
+            }}
+        />
+    );
 
     return (
         <div>
+            {hiddenFileInput}
+
+            {/* Search, Sort & Filter Bar */}
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/30">
+                <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Search */}
+                    <div className="relative flex-1">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            placeholder="Search shows…"
+                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                        />
+                        {searchQuery && (
+                            <button onClick={() => setSearchQuery("")} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex gap-2">
+                        {/* Sort */}
+                        <label htmlFor="sort-shows" className="sr-only">Sort shows</label>
+                        <select
+                            id="sort-shows"
+                            value={sortBy}
+                            onChange={e => setSortBy(e.target.value)}
+                            aria-label="Sort shows"
+                            className="text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[130px]"
+                        >
+                            <option value="created_at_asc">Oldest First</option>
+                            <option value="created_at_desc">Newest First</option>
+                            <option value="name_asc">Name A–Z</option>
+                            <option value="name_desc">Name Z–A</option>
+                            <option value="priority_high">Priority ↑</option>
+                            <option value="priority_low">Priority ↓</option>
+                            <option value="users_most">Most Users</option>
+                        </select>
+
+                        {/* Filter Priority */}
+                        <label htmlFor="filter-priority" className="sr-only">Filter by priority</label>
+                        <select
+                            id="filter-priority"
+                            value={filterPriority}
+                            onChange={e => setFilterPriority(e.target.value)}
+                            aria-label="Filter by priority"
+                            className="text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[110px]"
+                        >
+                            <option value="all">All Priority</option>
+                            <option value="red">🔴 High</option>
+                            <option value="orange">🟠 Medium</option>
+                            <option value="yellow">🟡 Low</option>
+                            <option value="none">⚪ None</option>
+                        </select>
+                    </div>
+                </div>
+                {/* Results counter */}
+                {(searchQuery || filterPriority !== "all") && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 font-medium">
+                        Showing {filteredSortedLogs.length} of {logs.length} shows
+                        {searchQuery && <> matching "<strong className="text-indigo-400">{searchQuery}</strong>"</>}
+                    </p>
+                )}
+            </div>
             {/* Global Confirm Modal */}
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
@@ -457,15 +757,15 @@ export default function ShowTable({ logs: initialLogs }) {
 
             {/* Bulk Actions */}
             {selectedRows.length > 0 && (
-                <div className="bg-indigo-50/80 backdrop-blur-sm border-b border-indigo-100 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-                    <span className="text-sm text-indigo-900 font-semibold">{selectedRows.length} selected</span>
-                    <div className="flex gap-3">
-                        <button onClick={toggleSelectAll} className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50">
+                <div className="bg-indigo-50/80 dark:bg-indigo-900/30 backdrop-blur-sm border-b border-indigo-100 dark:border-indigo-800/50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sticky top-0 z-10">
+                    <span className="text-sm text-indigo-900 dark:text-indigo-300 font-semibold">{selectedRows.length} selected</span>
+                    <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+                        <button onClick={toggleSelectAll} className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/40">
                             {selectedRows.length === logs.length ? "Deselect All" : "Select All"}
                         </button>
-                        <button onClick={handleBulkDeleteClick} className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 flex items-center gap-1.5">
+                        <button onClick={handleBulkDeleteClick} className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 flex items-center justify-center gap-1.5">
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            Delete Selected
+                            Delete
                         </button>
                     </div>
                 </div>
@@ -480,14 +780,14 @@ export default function ShowTable({ logs: initialLogs }) {
                                 <input type="checkbox" checked={logs.length > 0 && selectedRows.length === logs.length} onChange={toggleSelectAll} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                             </th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-slate-700">Show Name</th>
-                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-slate-700">Notes & Promo</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-slate-700">Notes</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center border-b border-gray-200 dark:border-slate-700">Users</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right border-b border-gray-200 dark:border-slate-700">Actions</th>
                             <th className="px-6 py-4 w-12 border-b border-gray-200 dark:border-slate-700 rounded-tr-lg rounded-br-lg"></th>
                         </tr>
                     </thead>
                     <tbody className="bg-transparent">
-                        {logs.map(log => {
+                        {filteredSortedLogs.map(log => {
                             const users = log.show_participants || [];
                             const isExpanded = expandedShows[log.id];
 
@@ -509,7 +809,7 @@ export default function ShowTable({ logs: initialLogs }) {
                                                 </a>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-5 first:rounded-l-lg last:rounded-r-lg">
+                                        <td className="px-6 py-5 first:rounded-l-lg last:rounded-r-lg max-w-[280px]">
                                             <div className="flex flex-col items-start gap-4">
                                                 {editingNotes === log.id ? (
                                                     <div className="w-full relative">
@@ -526,9 +826,9 @@ export default function ShowTable({ logs: initialLogs }) {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => { setEditingNotes(log.id); setTempNotes(log.notes || ""); }} className="text-left group/note max-w-xs">
+                                                    <button onClick={() => { setEditingNotes(log.id); setTempNotes(log.notes || ""); }} className="text-left group/note w-full">
                                                         {log.notes ? (
-                                                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-snug group-hover/note:text-indigo-600 dark:group-hover/note:text-indigo-400 transition-colors">{log.notes}</p>
+                                                            <p className="text-sm font-bold text-gray-700 dark:text-gray-300 leading-snug group-hover/note:text-indigo-600 dark:group-hover/note:text-indigo-400 transition-colors break-words whitespace-normal">{log.notes}</p>
                                                         ) : (
                                                             <span className="text-xs text-gray-400 font-medium group-hover/note:text-indigo-500 dashed-underline decoration-gray-300 cursor-pointer">+ Add Note</span>
                                                         )}
@@ -539,14 +839,12 @@ export default function ShowTable({ logs: initialLogs }) {
                                         </td>
                                         <td className="px-6 py-5 first:rounded-l-lg last:rounded-r-lg">
                                             <div className="flex flex-col items-center gap-2">
-                                                <div className="flex -space-x-2 overflow-hidden justify-center min-w-[80px]">
+                                                <div className="flex -space-x-2 overflow-hidden justify-center">
                                                     {users.slice(0, 3).map((u, i) => (
-                                                        <div key={i} className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600">
-                                                            {u.user_name.charAt(0).toUpperCase()}
-                                                        </div>
+                                                        <UserAvatar key={i} user={u} />
                                                     ))}
                                                     {users.length > 3 && (
-                                                        <div className="inline-block h-8 w-8 rounded-full ring-2 ring-white bg-gray-50 flex items-center justify-center text-xs text-gray-500">
+                                                        <div className="inline-flex h-8 w-8 rounded-full ring-2 ring-white dark:ring-transparent bg-gray-100 dark:bg-slate-700 items-center justify-center text-xs text-gray-600 dark:text-gray-300 font-bold z-10 flex-shrink-0">
                                                             +{users.length - 3}
                                                         </div>
                                                     )}
@@ -674,6 +972,7 @@ export default function ShowTable({ logs: initialLogs }) {
                                                             </tbody>
                                                         </table>
                                                     )}
+
                                                 </div>
                                             </td>
                                         </tr>
@@ -686,8 +985,8 @@ export default function ShowTable({ logs: initialLogs }) {
             </div>
 
             {/* Mobile Card View */}
-            <div className="block md:hidden space-y-4">
-                {logs.map(log => {
+            <div className="block md:hidden space-y-4 p-4">
+                {filteredSortedLogs.map(log => {
                     const users = log.show_participants || [];
                     const isExpanded = expandedShows[log.id];
 
@@ -738,20 +1037,15 @@ export default function ShowTable({ logs: initialLogs }) {
                                     )}
                                 </div>
 
-                                <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                                    <div className="flex -space-x-2">
-                                        {users.slice(0, 3).map((u, i) => (
-                                            <div key={i} className="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-bold text-gray-600">{u.user_name.charAt(0)}</div>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => { setEditingShowConfig(log.id); setTempConfigPromo(log.promo_code || ""); }} className="px-3 py-1 bg-gray-100 text-gray-600 hover:text-indigo-500 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors">
+                                <div className="flex items-center justify-end border-t border-gray-100 dark:border-slate-800 pt-3">
+                                    <div className="flex gap-2 flex-wrap">
+                                        <button onClick={() => { setEditingShowConfig(log.id); setTempConfigPromo(log.promo_code || ""); }} className="px-3 py-1.5 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:text-indigo-500 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors">
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit
                                         </button>
                                         {!users.some(u => u.user_id === currentUser?.id) && (
-                                            <button onClick={() => openJoinModal(log.id)} className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold uppercase transition-colors">Join</button>
+                                            <button onClick={() => openJoinModal(log.id)} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold uppercase transition-colors">Join</button>
                                         )}
-                                        <button onClick={() => toggleExpand(log.id)} className={`px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : ''}`}>
+                                        <button onClick={() => toggleExpand(log.id)} className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase flex items-center gap-1 transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300'}`}>
                                             {users.length} Users
                                             <svg className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                         </button>
@@ -812,40 +1106,40 @@ export default function ShowTable({ logs: initialLogs }) {
 
             {/* Join Show Modal */}
             {showJoinModal && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 transition-all p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md ring-1 ring-black/5">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 transition-all">
+                    <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 sm:p-8 w-full sm:max-w-md ring-1 ring-black/5 dark:ring-transparent max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-xl font-bold text-slate-900">Join Show</h3>
-                            <button onClick={() => { setShowJoinModal(null); setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" }); }} className="text-gray-400 hover:text-gray-600">
+                            <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">Join Show</h3>
+                            <button onClick={() => { setShowJoinModal(null); setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" }); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
                         <div className="space-y-5">
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name *</label>
-                                <input type="text" value={joinForm.name} onChange={e => setJoinForm({ ...joinForm, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50" placeholder="e.g. Jane Doe" autoFocus readOnly />
-                                <p className="mt-1 text-xs text-gray-500">This is automatically set from your profile</p>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name *</label>
+                                <input type="text" value={joinForm.name} onChange={e => setJoinForm({ ...joinForm, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white" placeholder="e.g. Jane Doe" autoFocus readOnly />
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This is automatically set from your profile</p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
-                                <input type="email" value={joinForm.email} onChange={e => setJoinForm({ ...joinForm, email: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50" placeholder="your@email.com" readOnly />
-                                <p className="mt-1 text-xs text-gray-500">This is automatically set from your account</p>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Email Address</label>
+                                <input type="email" value={joinForm.email} onChange={e => setJoinForm({ ...joinForm, email: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white" placeholder="your@email.com" readOnly />
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This is automatically set from your account</p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check Start Date</label>
-                                    <input type="date" value={joinForm.checkStartDate} onChange={e => setJoinForm({ ...joinForm, checkStartDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Check Start Date</label>
+                                    <input type="date" value={joinForm.checkStartDate} onChange={e => setJoinForm({ ...joinForm, checkStartDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check End Date</label>
-                                    <input type="date" value={joinForm.checkEndDate} onChange={e => setJoinForm({ ...joinForm, checkEndDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Check End Date</label>
+                                    <input type="date" value={joinForm.checkEndDate} onChange={e => setJoinForm({ ...joinForm, checkEndDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" />
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-8">
-                            <button onClick={() => { setShowJoinModal(null); setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" }); }} className="px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-8">
+                            <button onClick={() => { setShowJoinModal(null); setJoinForm({ name: "", email: "", checkStartDate: "", checkEndDate: "" }); }} className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
                             <button onClick={handleJoinShow} disabled={!joinForm.name.trim()} className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all">Join Show</button>
                         </div>
                     </div>
@@ -854,27 +1148,27 @@ export default function ShowTable({ logs: initialLogs }) {
 
             {/* Edit User Modal */}
             {editingUser && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 transition-all p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm ring-1 ring-black/5">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 transition-all">
+                    <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 sm:p-8 w-full sm:max-w-sm ring-1 ring-black/5 dark:ring-transparent">
                         <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-xl font-bold text-slate-900">Edit User Period</h3>
-                            <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:text-gray-600">
+                            <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">Edit User Period</h3>
+                            <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
                         <div className="space-y-4">
-                            <p className="text-sm text-gray-600 mb-2">Editing: <strong>{editingUser.user_name}</strong></p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Editing: <strong className="text-gray-900 dark:text-white">{editingUser.user_name}</strong></p>
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check Start</label>
-                                <input type="date" value={editForm.checkStartDate} onChange={e => setEditForm({ ...editForm, checkStartDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Check Start</label>
+                                <input type="date" value={editForm.checkStartDate} onChange={e => setEditForm({ ...editForm, checkStartDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Check End</label>
-                                <input type="date" value={editForm.checkEndDate} onChange={e => setEditForm({ ...editForm, checkEndDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Check End</label>
+                                <input type="date" value={editForm.checkEndDate} onChange={e => setEditForm({ ...editForm, checkEndDate: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-white" />
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-8">
-                            <button onClick={() => setEditingUser(null)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-8">
+                            <button onClick={() => setEditingUser(null)} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
                             <button onClick={handleEditSubmit} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-all">Save Changes</button>
                         </div>
                     </div>
@@ -884,7 +1178,7 @@ export default function ShowTable({ logs: initialLogs }) {
             {/* Edit Show Config Modal (Priority & Promos) */}
             {editingShowConfig && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 transition-all p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-8 w-full max-w-sm ring-1 ring-black/5 dark:ring-white/10 relative">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-8 w-full max-w-sm ring-1 ring-black/5 dark:ring-transparent relative">
                         <button onClick={() => { setEditingShowConfig(null); setTempConfigPromo(""); }} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -923,6 +1217,19 @@ export default function ShowTable({ logs: initialLogs }) {
                             <button onClick={() => { handleConfigSubmit(editingShowConfig, null, tempConfigPromo); setEditingShowConfig(null); }} className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all hover:-translate-y-0.5">Save Config</button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Lightbox Overlay */}
+            {lightboxImage && (
+                <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
+                    <img src={lightboxImage} alt="Screenshot preview" />
+                    <button
+                        onClick={() => setLightboxImage(null)}
+                        className="absolute top-6 right-6 text-white/70 hover:text-white bg-black/40 rounded-full p-2 transition-colors"
+                    >
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
                 </div>
             )}
         </div>

@@ -28,7 +28,7 @@ export default function LoginPage() {
         resize();
         window.addEventListener("resize", resize);
 
-        const particles = Array.from({ length: 80 }, () => ({
+        const particles = Array.from({ length: 20 }, () => ({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
             r: Math.random() * 1.8 + 0.4,

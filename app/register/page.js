@@ -9,6 +9,7 @@ export default function RegisterPage() {
     const [email, setEmail] = useState("");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
+    const [position, setPosition] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -36,7 +37,7 @@ export default function RegisterPage() {
         resize();
         window.addEventListener("resize", resize);
 
-        const particles = Array.from({ length: 80 }, () => ({
+        const particles = Array.from({ length: 20 }, () => ({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
             r: Math.random() * 1.8 + 0.4,
@@ -154,6 +155,7 @@ export default function RegisterPage() {
                     data: {
                         first_name: firstName,
                         last_name: lastName,
+                        position: position,
                         username: username.toLowerCase(),
                     }
                 },
@@ -161,22 +163,18 @@ export default function RegisterPage() {
 
             if (authError) throw authError;
 
-            // Supabase returns a user with NO identities when the email is already taken
-            // (even if the profiles check above missed it)
             if (authData?.user && authData.user.identities && authData.user.identities.length === 0) {
                 setError("An account with this email already exists. Please log in instead.");
                 setLoading(false);
                 return;
             }
 
-            // Also guard against null user response
             if (!authData?.user) {
                 setError("Something went wrong during registration. Please try again.");
                 setLoading(false);
                 return;
             }
 
-            // Move to Step 2 (Code Verification)
             setStep(2);
             setSuccessMessage("Verification code sent! Check your email (including Spam).");
         } catch (err) {
@@ -213,6 +211,14 @@ export default function RegisterPage() {
                 setLoading(false);
                 return;
             }
+
+            // Force update profile just in case the Supabase trigger failed to set it correctly
+            await supabase.from("profiles").update({
+                username: username.toLowerCase(),
+                first_name: firstName,
+                last_name: lastName,
+                position: position
+            }).eq("id", data.session.user.id);
 
             // Verification successful — user is now logged in via the session created
             router.push('/');
@@ -377,6 +383,12 @@ export default function RegisterPage() {
                                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Last Name</label>
                                     <input type="text" required value={lastName} onChange={e => setLastName(e.target.value)} className="w-full px-3.5 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-600 text-sm outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all" placeholder="Doe" />
                                 </div>
+                            </div>
+
+                            {/* Position */}
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Position / Role</label>
+                                <input type="text" required value={position} onChange={e => setPosition(e.target.value)} className="w-full px-3.5 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-600 text-sm outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all" placeholder="e.g. Stage Manager, Lighting Tech" />
                             </div>
 
                             {/* Username */}

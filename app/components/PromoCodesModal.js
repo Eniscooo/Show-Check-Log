@@ -10,6 +10,7 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
     const [newPromo, setNewPromo] = useState("");
     const [adding, setAdding] = useState(false);
     const [copiedPromo, setCopiedPromo] = useState(null);
+    const [searchQuery, setSearchQuery] = useState("");
 
     // Confirm Modal state
     const [confirmModal, setConfirmModal] = useState({
@@ -22,7 +23,11 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
     });
 
     // Shows that actually have promo codes, or just all shows
-    const showsWithPromos = logs.filter(log => log.promo_code && log.promo_code.trim() !== "");
+    const showsWithPromos = logs.filter(log => {
+        if (!log.promo_code || log.promo_code.trim() === "") return false;
+        if (searchQuery.trim() === "") return true;
+        return log.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    });
 
     if (!isOpen) return null;
 
@@ -113,7 +118,7 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
                 onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
             />
 
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl ring-1 ring-black/5 dark:ring-white/10 overflow-hidden flex flex-col md:max-h-[85vh] max-h-[90vh]">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl ring-1 ring-black/5 dark:ring-transparent overflow-hidden flex flex-col md:max-h-[85vh] max-h-[90vh]">
 
                 {/* Header */}
                 <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50/50 dark:bg-slate-800/20">
@@ -131,14 +136,17 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
                 <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
 
                     {/* Add New Promo Section */}
-                    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+                    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transform transition-all">
                         <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4">Add Promo to Show</h3>
                         <form onSubmit={handleAddPromo} className="flex flex-col sm:flex-row gap-3">
                             <div className="flex-1">
+                                <label htmlFor="show-select" className="sr-only">Select a Show</label>
                                 <select
+                                    id="show-select"
                                     className="w-full text-sm px-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:text-white transition-all font-medium appearance-none"
                                     value={selectedShow}
                                     onChange={e => setSelectedShow(e.target.value)}
+                                    aria-label="Select a Show"
                                     required
                                 >
                                     <option value="" disabled>Select a Show...</option>
@@ -173,8 +181,20 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
                     </div>
 
                     {/* Directory List */}
-                    <div>
-                        <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 px-1">Active Show Promo Codes</h3>
+                    <div className="pt-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+                            <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1">Active Show Promo Codes</h3>
+                            <div className="relative">
+                                <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                <input 
+                                    type="text" 
+                                    placeholder="Search shows..." 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-9 pr-4 py-2 w-full sm:w-64 text-sm bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-gray-800 dark:text-white transition-all shadow-sm"
+                                />
+                            </div>
+                        </div>
 
                         {showsWithPromos.length === 0 ? (
                             <div className="text-center py-10 border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-2xl bg-gray-50/50 dark:bg-slate-800/20">

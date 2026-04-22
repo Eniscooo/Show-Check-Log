@@ -8,13 +8,21 @@ export default function NotificationBell() {
     const [hasUnread, setHasUnread] = useState(false);
     const dropdownRef = useRef(null);
 
+    const [currentUser, setCurrentUser] = useState(null);
+
     // Initial check + periodic re-check
     useEffect(() => {
-        checkForOverdueItems();
+        supabase.auth.getUser().then(({ data }) => {
+            setCurrentUser(data?.user);
+            checkForOverdueItems(data?.user?.id);
+        });
+        
         // Re-check every 30 minutes
-        const interval = setInterval(checkForOverdueItems, 30 * 60 * 1000);
+        const interval = setInterval(() => {
+            if (currentUser) checkForOverdueItems(currentUser.id);
+        }, 30 * 60 * 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [currentUser?.id]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -27,9 +35,11 @@ export default function NotificationBell() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    async function checkForOverdueItems() {
+    async function checkForOverdueItems(userId) {
+        if (!userId) return;
+        const storageKey = `notificationsDismissedUntil_${userId}`;
         // If user has cleared notifications, respect that until next fresh check window
-        const dismissedUntil = localStorage.getItem('notificationsDismissedUntil');
+        const dismissedUntil = localStorage.getItem(storageKey);
         if (dismissedUntil) {
             const dismissTime = parseInt(dismissedUntil);
             // Respect the dismiss for 2 hours
@@ -39,7 +49,7 @@ export default function NotificationBell() {
                 return;
             } else {
                 // Dismiss window expired, allow fresh check
-                localStorage.removeItem('notificationsDismissedUntil');
+                localStorage.removeItem(storageKey);
             }
         }
 
@@ -67,18 +77,22 @@ export default function NotificationBell() {
 
             const newNotifications = [];
             const now = new Date();
-            const OVERDUE_HOURS = 48; // Alert after 48 hours as requested
+            const OVERDUE_HOURS = 24; // Alert after 24 hours
             const timeLimit = OVERDUE_HOURS * 60 * 60 * 1000;
 
             for (const show of shows) {
                 const participants = show.show_participants || [];
-                
+
                 // Skip if no participants
                 if (participants.length === 0) continue;
 
+                // Check if the current user is part of this show
+                const amIInShow = participants.some(p => p.user_id === userId);
+                if (!amIInShow) continue;
+
                 // Check if ALL participants in this show are pending (status === false)
                 const allPending = participants.every(p => p.status === false || p.status === null);
-                
+
                 if (!allPending) continue; // At least one user has checked — not overdue
 
                 // Find the oldest pending participant's timestamp
@@ -87,7 +101,7 @@ export default function NotificationBell() {
                     const baseTime = new Date(
                         participant.status_changed_at || participant.created_at || now
                     ).getTime();
-                    
+
                     if (!oldestPendingTime || baseTime < oldestPendingTime) {
                         oldestPendingTime = baseTime;
                     }
@@ -147,15 +161,17 @@ export default function NotificationBell() {
         setHasUnread(false);
         setIsOpen(false);
         // Store a dismiss timestamp so on refresh we don't immediately reload them
-        localStorage.setItem('notificationsDismissedUntil', Date.now().toString());
+        if (currentUser) {
+            localStorage.setItem(`notificationsDismissedUntil_${currentUser.id}`, Date.now().toString());
+        }
     }
 
     function dismissSingle(notifId) {
         setNotifications(prev => {
             const updated = prev.filter(n => n.id !== notifId);
-            if (updated.length === 0) {
+            if (updated.length === 0 && currentUser) {
                 setHasUnread(false);
-                localStorage.setItem('notificationsDismissedUntil', Date.now().toString());
+                localStorage.setItem(`notificationsDismissedUntil_${currentUser.id}`, Date.now().toString());
             }
             return updated;
         });
@@ -197,7 +213,7 @@ export default function NotificationBell() {
                         {notifications.length === 0 ? (
                             <div className="px-4 py-8 text-center">
                                 <p className="text-sm text-gray-400">No overdue alerts</p>
-                                <p className="text-xs text-gray-600 mt-1">Alerts trigger when all users are pending for 48+ hours</p>
+                                <p className="text-xs text-gray-600 mt-1">Alerts trigger when all users are pending for 24+ hours</p>
                             </div>
                         ) : (
                             <ul className="divide-y divide-white/5">
