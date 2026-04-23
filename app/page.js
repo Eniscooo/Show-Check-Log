@@ -73,24 +73,10 @@ function AnnouncementsSection() {
 export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState("");
   const router = useRouter();
 
   useEffect(() => {
     async function boot() {
-      // Get current user and their profile name
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (authUser) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('first_name, username')
-          .eq('id', authUser.id)
-          .single();
-
-        const displayName = profile?.first_name || profile?.username || authUser.user_metadata?.first_name || authUser.user_metadata?.username || "Commander";
-        setUserName(displayName);
-      }
-
       // Auth is now handled by edge middleware — no client-side redirect needed
       const { data } = await supabase
         .from("shows")
@@ -117,27 +103,6 @@ export default function Dashboard() {
   return (
     <AppShell>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-10 py-6 sm:py-10 space-y-8 sm:space-y-10">
-
-        {/* ── Welcome Header ───────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2 animate-fadeIn">
-          <div>
-            <h1 className="text-2xl sm:text-4xl font-black text-[var(--on-surface)] tracking-tight">
-              {(() => {
-                const hour = new Date().getHours();
-                if (hour < 12) return "Good morning";
-                if (hour < 17) return "Good afternoon";
-                return "Good evening";
-              })()}, <span className="text-blue-600 dark:text-blue-400 capitalize">{userName || "there"}</span>!
-            </h1>
-            <p className="text-sm sm:text-base text-[var(--on-surface-variant)] opacity-70 font-medium mt-1">
-              Here's the current status of your show operations.
-            </p>
-          </div>
-          <div className="hidden md:block text-right bg-[var(--surface-container-low)] px-5 py-3 rounded-2xl border border-[var(--outline-variant)] dark:border-transparent shadow-sm">
-            <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.2em] mb-0.5">Today's Date</p>
-            <p className="text-sm font-bold text-[var(--on-surface)]">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-          </div>
-        </div>
 
         {/* ── Stats ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 stagger">
