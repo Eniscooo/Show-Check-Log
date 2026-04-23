@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import toast from "react-hot-toast";
+import Dropdown from "./Dropdown";
 import ConfirmModal from "./ConfirmModal";
 
 function UserAvatar({ user, size = "w-8 h-8" }) {
@@ -702,38 +703,38 @@ export default function ShowTable({ logs: initialLogs }) {
 
                     <div className="flex gap-2">
                         {/* Sort */}
-                        <label htmlFor="sort-shows" className="sr-only">Sort shows</label>
-                        <select
-                            id="sort-shows"
+                        <Dropdown
                             value={sortBy}
-                            onChange={e => setSortBy(e.target.value)}
-                            aria-label="Sort shows"
-                            className="text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[130px]"
-                        >
-                            <option value="created_at_asc">Oldest First</option>
-                            <option value="created_at_desc">Newest First</option>
-                            <option value="name_asc">Name A–Z</option>
-                            <option value="name_desc">Name Z–A</option>
-                            <option value="priority_high">Priority ↑</option>
-                            <option value="priority_low">Priority ↓</option>
-                            <option value="users_most">Most Users</option>
-                        </select>
+                            onChange={setSortBy}
+                            options={[
+                                { value: "created_at_asc", label: "Oldest First" },
+                                { value: "created_at_desc", label: "Newest First" },
+                                { value: "name_asc", label: "Name A–Z" },
+                                { value: "name_desc", label: "Name Z–A" },
+                                { value: "priority_high", label: "Priority ↑" },
+                                { value: "priority_low", label: "Priority ↓" },
+                                { value: "users_most", label: "Most Users" }
+                            ]}
+                            className="w-[140px]"
+                            triggerClassName="w-full text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500"
+                            dropdownClassName="min-w-[160px]"
+                        />
 
                         {/* Filter Priority */}
-                        <label htmlFor="filter-priority" className="sr-only">Filter by priority</label>
-                        <select
-                            id="filter-priority"
+                        <Dropdown
                             value={filterPriority}
-                            onChange={e => setFilterPriority(e.target.value)}
-                            aria-label="Filter by priority"
-                            className="text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[110px]"
-                        >
-                            <option value="all">All Priority</option>
-                            <option value="red">🔴 High</option>
-                            <option value="orange">🟠 Medium</option>
-                            <option value="yellow">🟡 Low</option>
-                            <option value="none">⚪ None</option>
-                        </select>
+                            onChange={setFilterPriority}
+                            options={[
+                                { value: "all", label: "All Priority" },
+                                { value: "red", label: "🔴 High" },
+                                { value: "orange", label: "🟠 Medium" },
+                                { value: "yellow", label: "🟡 Low" },
+                                { value: "none", label: "⚪ None" }
+                            ]}
+                            className="w-[130px]"
+                            triggerClassName="w-full text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500"
+                            dropdownClassName="min-w-[140px] right-0 sm:left-0 sm:right-auto"
+                        />
                     </div>
                 </div>
                 {/* Results counter */}

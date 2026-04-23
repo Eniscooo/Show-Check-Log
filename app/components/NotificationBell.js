@@ -199,7 +199,7 @@ export default function NotificationBell() {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.4)] border border-white/10 z-50">
+                <div className="fixed sm:absolute top-[70px] sm:top-auto sm:mt-2 right-4 sm:right-0 w-[calc(100vw-32px)] sm:w-80 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.4)] border border-white/10 z-[100]">
                     <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                         <h3 className="font-semibold text-white text-sm">🔔 Notifications</h3>
                         {notifications.length > 0 && (

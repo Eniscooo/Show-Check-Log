@@ -76,16 +76,18 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
         try {
-            let loginEmail = identifier;
-            if (!identifier.includes("@")) {
-                const cleaned = identifier.startsWith("@") ? identifier.slice(1) : identifier;
-                const { data: profile, error: profileErr } = await supabase
-                    .from("profiles")
-                    .select("email")
-                    .eq("username", cleaned.toLowerCase())
-                    .single();
-                if (profileErr || !profile) throw new Error("Username not found. Please check and try again.");
-                loginEmail = profile.email;
+            let loginEmail = identifier.trim();
+            // It's a username if it doesn't contain '@' OR if it only starts with '@' (e.g. "@johndoe")
+            if (!loginEmail.includes("@") || (loginEmail.startsWith("@") && loginEmail.lastIndexOf("@") === 0)) {
+                const cleaned = loginEmail.startsWith("@") ? loginEmail.slice(1) : loginEmail;
+                
+                // Use the secure RPC function to bypass RLS and look up the email
+                const { data: emailData, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: cleaned.toLowerCase() });
+                
+                if (rpcError || !emailData) {
+                    throw new Error("Username not found. Please check and try again.");
+                }
+                loginEmail = emailData;
             }
             const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
             if (error) throw error;

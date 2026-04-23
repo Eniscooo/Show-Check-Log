@@ -239,7 +239,7 @@ function AddMemberModal({ activeGroup, groupMembers, onClose, onAdded }) {
                     <div>
                         <input autoFocus type={mode === "email" ? "email" : "text"} placeholder={mode === "email" ? "teammate@example.com" : "@username"}
                             value={query} onChange={e => setQuery(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl bg-[var(--surface-container)] border border-[var(--outline-variant)]/20 text-[var(--on-surface)] text-sm focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium placeholder-[var(--on-surface-variant)]"
+                            className="w-full px-4 py-3 rounded-xl bg-[var(--surface-container)] border border-[var(--outline-variant)]/20 text-[var(--on-surface)] text-sm focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium placeholder-[var(--on-surface-variant)] dark:border-transparent"
                         />
                     </div>
                     <div className="flex gap-3 pt-2">
@@ -312,7 +312,7 @@ function CreateDMModal({ currentUser, onClose, onCreated }) {
 
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-[var(--surface-container-lowest)] border border-[var(--outline-variant)]/30 w-full max-w-sm rounded-[24px] p-6 shadow-2xl animate-springUp relative overflow-hidden">
+            <div className="bg-[var(--surface-container-lowest)] border border-[var(--outline-variant)]/30 w-full max-w-sm rounded-[24px] p-6 shadow-2xl animate-springUp  dark:border-transparent relative overflow-hidden">
                 <div className="flex justify-between items-center mb-5">
                     <h3 className="font-bold text-lg text-[var(--on-surface)] m-0 tracking-tight">New Message</h3>
                     <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-[var(--surface-container)] hover:bg-[var(--surface-container-high)] text-[var(--on-surface-variant)] transition-colors border-none cursor-pointer">✕</button>
@@ -484,7 +484,7 @@ function MessageBubble({ msg, isMe, isGroup, isFirstInGroup, isLastInGroup, onRe
                         onContextMenu={e => { e.preventDefault(); onContextMenu(e, msg, isMe, () => { setEditing(true); }); }}
                         className="msg-bubble"
                         style={{
-                            padding: msg.file_url && !msg.content ? "4px 4px 6px" : "7px 12px 7px",
+                            padding: msg.file_url && !msg.content ? "4px 4px 6px" : "6px 12px 6px",
                             background: isMe ? "var(--primary, #4F46E5)" : "var(--color-background-primary)",
                             color: isMe ? "#ffffff" : "var(--color-text-primary)",
                             borderRadius: isMe
@@ -543,14 +543,14 @@ function MessageBubble({ msg, isMe, isGroup, isFirstInGroup, isLastInGroup, onRe
                                         onClick={() => onImageClick(msg.file_url)}
                                         style={{ marginTop: msg.content ? 6 : 0, cursor: "pointer", borderRadius: 10, overflow: "hidden", display: "inline-block" }}
                                     >
-                                        <img src={msg.file_url} alt={msg.file_name || "image"} style={{ maxWidth: "min(280px, calc(100vw - 120px))", maxHeight: 240, display: "block", objectFit: "cover", borderRadius: 10 }} />
+                                        <img src={msg.file_url} onLoad={() => { const feed = document.querySelector('.msg-feed'); if (feed) feed.scrollTop = feed.scrollHeight; }} alt={msg.file_name || "image"} style={{ maxWidth: "min(280px, calc(100vw - 120px))", maxHeight: 240, display: "block", objectFit: "cover", borderRadius: 10 }} />
                                     </div>
                                 )}
                             </>
                         )}
                         {isMe && !editing && (
-                            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 3, height: 10, position: "relative", right: -4 }}>
-                                <svg width="16" height="10" viewBox="0 0 16 11" fill="none" style={{ flexShrink: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "flex-end", position: "relative", right: -4, marginTop: 2, height: 4 }}>
+                                <svg width="16" height="10" viewBox="0 0 16 11" fill="none" style={{ flexShrink: 0, position: "absolute", bottom: -2 }}>
                                     {isRead ? (
                                         <>
                                             <path d="M1 5.5L4.5 9L10 3" stroke="#4FC3F7" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -568,7 +568,7 @@ function MessageBubble({ msg, isMe, isGroup, isFirstInGroup, isLastInGroup, onRe
                     </div>
 
                     {Object.keys(reactionMap).length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3, justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 2, justifyContent: isMe ? "flex-end" : "flex-start", position: "relative", zIndex: 1 }}>
                             {Object.entries(reactionMap).map(([emoji, users]) => (
                                 <button key={emoji} onClick={() => onReact(msg.id, emoji)} className="reaction-btn" style={{
                                     display: "flex", alignItems: "center", gap: 3,
@@ -829,15 +829,19 @@ export default function MessengerPage() {
     // so a single rAF is all that's needed; the mass of setTimeouts was a symptom
     // of the container not being properly constrained.
     function scrollToBottom() {
-        requestAnimationFrame(() => {
-            const feed = document.querySelector('.msg-feed');
-            if (feed) feed.scrollTop = feed.scrollHeight;
-        });
+        const feed = document.querySelector('.msg-feed');
+        if (feed) feed.scrollTop = feed.scrollHeight;
     }
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        const feed = document.querySelector('.msg-feed');
+        if (!feed) return;
+        feed.scrollTop = feed.scrollHeight;
+        const t1 = setTimeout(() => { if (feed) feed.scrollTop = feed.scrollHeight; }, 100);
+        const t2 = setTimeout(() => { if (feed) feed.scrollTop = feed.scrollHeight; }, 300);
+        const t3 = setTimeout(() => { if (feed) feed.scrollTop = feed.scrollHeight; }, 600);
+        return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }, [messages, activeGroup?.id]);
 
     async function loadMyGroups(userId, justLeft = false) {
         if (!userId) return;
@@ -1070,49 +1074,63 @@ export default function MessengerPage() {
     }
 
     function toggleMute(groupId) {
-        setMutedGroups(prev => {
-            const next = prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId];
-            localStorage.setItem("mutedGroups", JSON.stringify(next));
-            toast.success(prev.includes(groupId) ? "Unmuted" : "Muted");
-            return next;
-        });
+        const isMuted = mutedGroups.includes(groupId);
+        const next = isMuted ? mutedGroups.filter(id => id !== groupId) : [...mutedGroups, groupId];
+        setMutedGroups(next);
+        localStorage.setItem("mutedGroups", JSON.stringify(next));
+        toast.success(isMuted ? "Unmuted" : "Muted");
     }
 
     function toggleBlock(targetUserId) {
-        setBlockedUsers(prev => {
-            const next = prev.includes(targetUserId) ? prev.filter(id => id !== targetUserId) : [...prev, targetUserId];
-            localStorage.setItem("blockedUsers", JSON.stringify(next));
-            toast.success(prev.includes(targetUserId) ? "Unblocked user" : "User blocked");
-            return next;
-        });
+        const isBlocked = blockedUsers.includes(targetUserId);
+        const next = isBlocked ? blockedUsers.filter(id => id !== targetUserId) : [...blockedUsers, targetUserId];
+        setBlockedUsers(next);
+        localStorage.setItem("blockedUsers", JSON.stringify(next));
+        toast.success(isBlocked ? "Unblocked user" : "User blocked");
+    }
+
+    function confirmAction(message, onConfirm) {
+        toast((t) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>{message}</span>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => toast.dismiss(t.id)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Cancel</button>
+                    <button onClick={() => { toast.dismiss(t.id); onConfirm(); }} style={{ padding: "4px 10px", borderRadius: 6, border: "none", background: "#EF4444", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Confirm</button>
+                </div>
+            </div>
+        ), { duration: 5000 });
     }
 
     async function handleLeaveGroup() {
         if (!activeGroup || !currentUser) return;
-        if (currentUser.id === activeGroup.created_by) {
-            if (!window.confirm("You are the admin. Leaving will delete this group. Continue?")) return;
-            const tid = toast.loading("Deleting…");
-            await supabase.from("chat_groups").delete().eq("id", activeGroup.id);
-            toast.success("Group deleted.", { id: tid });
-        } else {
-            if (!window.confirm("Leave this channel?")) return;
-            const tid = toast.loading("Leaving…");
-            await supabase.from("chat_group_members").delete().eq("group_id", activeGroup.id).eq("user_id", currentUser.id);
-            toast.success("Left channel.", { id: tid });
-        }
-        setActiveGroup(null);
-        setMessages([]);
-        setGroupMembers([]);
-        setShowSidebar(true);
-        loadMyGroups(currentUser.id, true);
+        const msg = isDM ? "Delete this conversation?" : (currentUser.id === activeGroup.created_by ? "You are the admin. Leaving will delete this group. Continue?" : "Leave this channel?");
+
+        confirmAction(msg, async () => {
+            const tid = toast.loading(currentUser.id === activeGroup.created_by || isDM ? "Deleting…" : "Leaving…");
+            if (currentUser.id === activeGroup.created_by || isDM) {
+                await supabase.from("chat_groups").delete().eq("id", activeGroup.id);
+                toast.success(isDM ? "Conversation deleted." : "Channel deleted.", { id: tid });
+            } else {
+                await supabase.from("chat_group_members").delete().eq("group_id", activeGroup.id).eq("user_id", currentUser.id);
+                toast.success("Left channel.", { id: tid });
+            }
+            setActiveGroup(null);
+            setMessages([]);
+            setGroupMembers([]);
+            setShowSidebar(true);
+            loadMyGroups(currentUser.id, true);
+        });
     }
 
     async function handleRemoveMember(memberId) {
         if (!activeGroup || currentUser?.id !== activeGroup.created_by) return;
         if (memberId === currentUser.id) return toast.error("Cannot remove yourself.");
-        if (!window.confirm("Remove this member?")) return;
-        await supabase.from("chat_group_members").delete().eq("group_id", activeGroup.id).eq("user_id", memberId);
-        loadGroupMembers(activeGroup.id); toast.success("Member removed.");
+
+        confirmAction("Remove this member?", async () => {
+            await supabase.from("chat_group_members").delete().eq("group_id", activeGroup.id).eq("user_id", memberId);
+            loadGroupMembers(activeGroup.id);
+            toast.success("Member removed.");
+        });
     }
 
     async function handleGroupAvatarUpload(e) {
@@ -1273,14 +1291,10 @@ export default function MessengerPage() {
                         width: 100% !important;
                         flex: 1 1 0% !important;
                         min-height: 0 !important;
+                        position: relative !important;
                     }
 
                     .messenger-sidebar {
-                        position: fixed !important;
-                        top: 0 !important;
-                        bottom: 0 !important;
-                        left: 0 !important; right: 0 !important;
-                        z-index: 500 !important;
                         width: 100% !important; min-width: 0 !important;
                         border: none !important;
                         background: var(--color-background-primary) !important;
@@ -1367,7 +1381,7 @@ export default function MessengerPage() {
             )}
 
             <div
-                className="messenger-wrapper shadow-lg dark:shadow-none dark:border dark:border-[var(--color-border-tertiary)]"
+                className="messenger-wrapper shadow-lg dark:shadow-none"
                 style={{
                     display: "flex",
                     overflow: "hidden",
@@ -1726,23 +1740,23 @@ export default function MessengerPage() {
                                     )}
                                     <div className="msg-center-col" style={{ padding: "0 12px" }}>
                                         <div className="chat-input-wrap" style={{
-                                            display: "flex", alignItems: "flex-end", gap: 4,
+                                            display: "flex", alignItems: "flex-end", gap: 6,
                                             background: "var(--color-background-secondary)",
-                                            borderRadius: 14, padding: "5px 5px 5px 12px",
+                                            borderRadius: 20, padding: "8px 14px",
                                             border: "1px solid var(--color-border-secondary)",
                                             transition: "border-color 0.2s, box-shadow 0.2s",
                                         }}>
                                             <button onClick={() => setShowEmojiPicker(v => !v)}
-                                                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: "4px", color: "var(--color-text-secondary)", flexShrink: 0, lineHeight: 1, borderRadius: 6, transition: "all 0.1s" }}
+                                                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, padding: 0, color: "var(--color-text-secondary)", flexShrink: 0, lineHeight: 1, transition: "all 0.1s", height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}
                                                 onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
                                                 onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-secondary)"}
                                                 title="Emoji">😊</button>
                                             <button onClick={() => fileInputRef.current?.click()}
-                                                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", color: "var(--color-text-secondary)", flexShrink: 0, lineHeight: 1, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}
+                                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--color-text-secondary)", flexShrink: 0, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s", height: 24 }}
                                                 onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
                                                 onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-secondary)"}
                                                 title="Attach image">
-                                                <Paperclip size={17} />
+                                                <Paperclip size={20} />
                                             </button>
                                             <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" style={{ display: "none" }} />
                                             <textarea
@@ -1754,25 +1768,26 @@ export default function MessengerPage() {
                                                 rows={1}
                                                 style={{
                                                     flex: 1, background: "transparent", border: "none", outline: "none",
-                                                    fontSize: 14, color: "var(--color-text-primary)", resize: "none",
-                                                    lineHeight: 1.5, padding: "5px 0", maxHeight: 120, overflowY: "auto",
-                                                    alignSelf: "center", fontFamily: "inherit",
+                                                    fontSize: 15, color: "var(--color-text-primary)", resize: "none",
+                                                    lineHeight: "24px", padding: 0, margin: "0 4px", maxHeight: 120, overflowY: "auto",
+                                                    fontFamily: "inherit",
                                                 }}
                                             />
                                             <button
                                                 onClick={handleSendMessage}
                                                 disabled={!newMessage.trim()}
                                                 style={{
-                                                    width: 34, height: 34, borderRadius: "50%",
-                                                    background: newMessage.trim() ? "var(--primary)" : "transparent",
+                                                    width: 32, height: 32, borderRadius: "50%",
+                                                    background: "#4F46E5",
                                                     border: "none", cursor: newMessage.trim() ? "pointer" : "default",
                                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                                    flexShrink: 0, transition: "all 0.2s",
-                                                    boxShadow: newMessage.trim() ? "0 2px 8px rgba(99,102,241,0.3)" : "none",
-                                                    transform: newMessage.trim() ? "scale(1)" : "scale(0.9)",
+                                                    flexShrink: 0, transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                                    opacity: newMessage.trim() ? 1 : 0.5,
+                                                    transform: newMessage.trim() ? "scale(1.05)" : "scale(1)",
+                                                    marginBottom: -4,
                                                 }}
                                             >
-                                                <SendHorizonal size={15} color={newMessage.trim() ? "#fff" : "var(--color-text-secondary)"} />
+                                                <SendHorizonal size={16} strokeWidth={2.5} color="#ffffff" style={{ marginLeft: 1 }} />
                                             </button>
                                         </div>
                                     </div>

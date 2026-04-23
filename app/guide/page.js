@@ -23,7 +23,7 @@ const sections = [
         color: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
         steps: [
             { title: "Stats Bar", desc: "At the top, you'll see key metrics — total shows, participants, checked counts, and pending counts updated in real-time." },
-            { title: "Announcements", desc: "Important team updates appear here. Anyone can post announcements with priority levels (Urgent, High, Normal, Low)." },
+            { title: "Announcements", desc: "Important team updates appear here. Anyone can post announcements with priority levels (Urgent, High, Normal, Low). Only admins can pin announcements." },
             { title: "Show Table", desc: "The main table lists all shows. Use the search bar to find shows quickly, and the sort/filter controls to organize them." },
             { title: "Activity Log", desc: "At the bottom, a running log of all team actions — who joined, checked, or updated shows." }
         ]
@@ -38,7 +38,7 @@ const sections = [
             { title: "Join a Show", desc: "Click the 'Join' button on any show you're not part of. Your name and email are auto-filled from your profile." },
             { title: "Set Priority", desc: "Click the edit (pencil) icon on a show to set its priority: High (red glow), Medium (orange), Low (yellow), or None." },
             { title: "Add Notes", desc: "Click the notes area on any show to add or edit notes. Notes are shared and visible to all team members." },
-            { title: "Upload Screenshots", desc: "Expand a show and click 'Upload' in the screenshots section to attach images. Click any thumbnail for a full-size view." },
+
             { title: "Search & Sort", desc: "Use the search bar to filter shows by name or notes. Sort by name, priority, date, or number of users. Filter by priority level." }
         ]
     },
@@ -82,9 +82,11 @@ const sections = [
         color: "bg-purple-500/10 text-purple-500 border-purple-500/20",
         steps: [
             { title: "Direct Messages & Channels", desc: "Start a private 1-on-1 chat by clicking the ✉ icon, or create a team channel with the + icon." },
-            { title: "Sharing Media", desc: "Click the '+' icon next to the chat box to upload screenshots and images. Click any image in chat to view it fullscreen and download." },
-            { title: "Reactions", desc: "Hover over a message to reveal the 😊 icon and add quick reactions to any message." },
-            { title: "Mute & Notifications", desc: "Click the info icon (top right in a chat) to mute notifications for that specific group or channel." }
+            { title: "Sharing Media", desc: "Click the paperclip icon to upload screenshots and images. Click any image in chat to view it fullscreen and download." },
+            { title: "Reactions & Replies", desc: "Hover over a message to reveal the 😊 icon to add quick reactions, or the ↩ icon to directly reply to a specific message." },
+            { title: "Edit & Delete Messages", desc: "Right-click (or long press on mobile) on any message you sent to edit its content or delete it completely." },
+            { title: "Read Receipts", desc: "Keep track of who's seen your messages with WhatsApp-style checkmarks. Double blue checkmarks mean your message has been read." },
+            { title: "Mute, Block & Manage", desc: "Click the info icon (top right in a chat) to mute notifications, block a user, remove members, or update the group's profile photo." }
         ]
     },
     {

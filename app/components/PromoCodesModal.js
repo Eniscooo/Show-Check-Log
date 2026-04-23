@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import toast from "react-hot-toast";
 import ConfirmModal from "./ConfirmModal";
+import Dropdown from "./Dropdown";
 
 export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
     const [selectedShow, setSelectedShow] = useState("");
@@ -140,20 +141,17 @@ export default function PromoCodesModal({ isOpen, onClose, logs, fetchLogs }) {
                         <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4">Add Promo to Show</h3>
                         <form onSubmit={handleAddPromo} className="flex flex-col sm:flex-row gap-3">
                             <div className="flex-1">
-                                <label htmlFor="show-select" className="sr-only">Select a Show</label>
-                                <select
-                                    id="show-select"
-                                    className="w-full text-sm px-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:text-white transition-all font-medium appearance-none"
+                                <Dropdown
                                     value={selectedShow}
-                                    onChange={e => setSelectedShow(e.target.value)}
-                                    aria-label="Select a Show"
-                                    required
-                                >
-                                    <option value="" disabled>Select a Show...</option>
-                                    {logs.map(log => (
-                                        <option key={log.id} value={log.id}>{log.name}</option>
-                                    ))}
-                                </select>
+                                    onChange={setSelectedShow}
+                                    options={[
+                                        { value: "", label: "Select a Show..." },
+                                        ...logs.map(log => ({ value: log.id, label: log.name }))
+                                    ]}
+                                    className="w-full"
+                                    triggerClassName="w-full text-sm px-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:text-white transition-all font-medium"
+                                    dropdownClassName="w-full"
+                                />
                             </div>
                             <div className="flex-1">
                                 <input

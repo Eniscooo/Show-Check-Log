@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import Dropdown from "./Dropdown";
 
 const ACTION_ICONS = {
     created_show: { icon: "✨", label: "Created Show", color: "text-emerald-500", bg: "bg-emerald-500/10" },
@@ -96,7 +97,7 @@ export default function ActivityLog() {
                     </div>
                     {/* Handled by page.js instead to unify layout, so we just show caret and badge */}
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold opacity-70 group-hover:opacity-100 transition-opacity">Toggle</span>
+                        <span className="text-sm font-bold opacity-70 group-hover:opacity-100 transition-opacity">Activity</span>
                         {logs.length > 0 && (
                             <span className="text-[10px] sm:text-xs font-bold bg-indigo-500/10 text-indigo-500 px-2 py-0.5 rounded-full border border-indigo-500/20 flex-shrink-0">{logs.length}</span>
                         )}
@@ -105,29 +106,22 @@ export default function ActivityLog() {
                 </button>
 
                 {!collapsed && logs.length > 0 && (
-                    <div className="relative">
-                        <label htmlFor="activity-filter" className="sr-only">Filter activity log</label>
-                        <select
-                            id="activity-filter"
-                            value={filter}
-                            onChange={e => setFilter(e.target.value)}
-                            aria-label="Filter activity log"
-                            className="appearance-none font-bold tracking-wide bg-[var(--surface-container-highest)] hover:bg-[var(--surface-container)] dark:bg-slate-800/80 dark:hover:bg-slate-700 border border-[var(--outline-variant)]/30 rounded-[20px] pl-3 sm:pl-4 pr-8 sm:pr-9 py-1.5 sm:py-2 text-[10px] sm:text-xs text-[var(--on-surface)] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all cursor-pointer flex-shrink-0 w-[95px] sm:w-[130px]"
-                        >
-                            <option value="all">All Activity</option>
-                            <option value="created_show">Created</option>
-                            <option value="joined_show">Joined</option>
-                            <option value="status_checked">Checked</option>
-                            <option value="notes_updated">Notes</option>
-                            <option value="priority_changed">Priority</option>
-                            <option value="posted_announcement">Announce</option>
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[var(--on-surface-variant)]">
-                            <svg className="h-3 w-3 sm:h-3.5 sm:w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </div>
-                    </div>
+                    <Dropdown
+                        value={filter}
+                        onChange={setFilter}
+                        options={[
+                            { value: "all", label: "All Activity" },
+                            { value: "created_show", label: "Created" },
+                            { value: "joined_show", label: "Joined" },
+                            { value: "status_checked", label: "Checked" },
+                            { value: "notes_updated", label: "Notes" },
+                            { value: "priority_changed", label: "Priority" },
+                            { value: "posted_announcement", label: "Announce" }
+                        ]}
+                        className="flex-shrink-0 w-[120px] sm:w-[140px]"
+                        triggerClassName="w-full font-bold tracking-wide bg-[var(--surface-container-highest)] hover:bg-[var(--surface-container)] dark:bg-slate-800/80 dark:hover:bg-slate-700 border border-[var(--outline-variant)]/30 rounded-[20px] px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs text-[var(--on-surface)] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] focus:ring-2 focus:ring-indigo-500/50"
+                        dropdownClassName="w-[150px] right-0 left-auto"
+                    />
                 )}
             </div>
 
