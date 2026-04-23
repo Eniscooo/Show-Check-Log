@@ -73,10 +73,29 @@ function AnnouncementsSection() {
 export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [greeting, setGreeting] = useState("");
+  const [todayLabel, setTodayLabel] = useState("");
   const router = useRouter();
 
   useEffect(() => {
     async function boot() {
+      // Fetch current user for welcome banner
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Try to get rich profile data (first_name, username)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name, username")
+          .eq("id", user.id)
+          .single();
+        setCurrentUser({
+          firstName: profile?.first_name || user.user_metadata?.first_name || null,
+          username: profile?.username || user.user_metadata?.username || null,
+          email: user.email,
+        });
+      }
+
       // Auth is now handled by edge middleware — no client-side redirect needed
       const { data } = await supabase
         .from("shows")
@@ -94,15 +113,70 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [router]);
 
+  // Set time-dependent values only on the client to avoid hydration mismatch
+  useEffect(() => {
+    const h = new Date().getHours();
+    if (h < 12) setGreeting("Good morning");
+    else if (h < 17) setGreeting("Good afternoon");
+    else setGreeting("Good evening");
+    setTodayLabel(new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }));
+  }, []);
+
   const totalShows = logs.length;
   const totalParticipants = logs.reduce((a, l) => a + (l.show_participants?.length || 0), 0);
   const checkedCount = logs.reduce((a, l) => a + (l.show_participants?.filter(p => p.status)?.length || 0), 0);
   const pendingCount = totalParticipants - checkedCount;
   const pct = n => totalParticipants > 0 ? ((n / totalParticipants) * 100).toFixed(1) + "%" : "0.0%";
 
+  // Welcome banner helpers
+  const displayName = currentUser?.firstName
+    ? toTitleCase(currentUser.firstName)
+    : currentUser?.username
+    ? toTitleCase(currentUser.username)
+    : currentUser?.email
+    ? toTitleCase(currentUser.email.split("@")[0])
+    : null;
+
+  // greeting and todayLabel are set via useEffect above (client-only) to prevent hydration mismatch
+
   return (
     <AppShell>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-10 py-6 sm:py-10 space-y-8 sm:space-y-10">
+
+        {/* ── Welcome Banner ────────────────────────────────────── */}
+        {displayName && (
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-blue-700 p-6 sm:p-8 shadow-xl shadow-indigo-500/20">
+            {/* Decorative blobs */}
+            <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-12 -left-6 w-40 h-40 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute top-1/2 right-1/4 w-24 h-24 bg-violet-300/10 rounded-full blur-xl pointer-events-none" />
+
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="text-indigo-200 text-xs sm:text-sm font-semibold tracking-widest uppercase mb-1.5">
+                  {greeting}
+                </p>
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight leading-tight">
+                  Welcome back,{" "}
+                  <span className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 bg-clip-text text-transparent">
+                    {displayName}
+                  </span>
+                  {" "}👋
+                </h1>
+                <p className="text-indigo-200/70 text-xs sm:text-sm mt-2 font-medium">{todayLabel}</p>
+              </div>
+
+              {/* Quick action pill */}
+              <Link
+                href="/shows"
+                className="inline-flex items-center gap-2 self-start sm:self-auto bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white text-sm font-bold px-4 py-2.5 rounded-xl border border-white/20 transition-all hover:scale-105 active:scale-95 whitespace-nowrap flex-shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                View Shows
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* ── Stats ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 stagger">

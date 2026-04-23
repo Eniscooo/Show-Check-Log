@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import toast from "react-hot-toast";
+import { Pin } from "lucide-react";
 
 const PRIORITY_CONFIG = {
     urgent: {
@@ -303,10 +304,7 @@ export default function AnnouncementBoard() {
                                         <div className="flex items-center gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                                             {isAdmin && (
                                                 <button onClick={() => handleTogglePin(a.id, a.pinned)} className="p-1.5 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors" title={a.pinned ? "Unpin" : "Pin"}>
-                                                    <svg className="w-4 h-4" fill={a.pinned ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                                                        <line x1="12" y1="17" x2="12" y2="22" />
-                                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                                                    </svg>
+                                                    <Pin size={16} strokeWidth={2} fill={a.pinned ? "currentColor" : "none"} />
                                                 </button>
                                             )}
                                             {(currentUser?.id === a.user_id) && (
